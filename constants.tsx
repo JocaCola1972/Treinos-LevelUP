@@ -57,9 +57,12 @@ export const MOCK_USERS: User[] = [
 ];
 
 export const MOCK_SHIFTS: Shift[] = [
-  { id: 's1', dayOfWeek: 'Segunda-feira', startTime: '18:00', durationMinutes: 60, studentIds: ['u2', 'u4'], level: SkillLevel.BEGINNER },
-  { id: 's2', dayOfWeek: 'Quarta-feira', startTime: '19:30', durationMinutes: 90, studentIds: ['u3', 'u5'], level: SkillLevel.INTERMEDIATE },
-  { id: 's3', dayOfWeek: 'Sexta-feira', startTime: '17:00', durationMinutes: 60, studentIds: ['u2', 'u3'], level: SkillLevel.BEGINNER },
+  // Corrected: Using 'recurrence: "SEMANAL"' instead of 'isRecurring: true' to satisfy Shift interface
+  { id: 's1', dayOfWeek: 'Segunda-feira', startTime: '18:00', durationMinutes: 60, studentIds: ['u2', 'u4'], level: SkillLevel.BEGINNER, recurrence: 'SEMANAL' },
+  // Corrected: Using 'recurrence: "SEMANAL"' instead of 'isRecurring: true' to satisfy Shift interface
+  { id: 's2', dayOfWeek: 'Quarta-feira', startTime: '19:30', durationMinutes: 90, studentIds: ['u3', 'u5'], level: SkillLevel.INTERMEDIATE, recurrence: 'SEMANAL' },
+  // Corrected: Using 'recurrence: "SEMANAL"' instead of 'isRecurring: true' to satisfy Shift interface
+  { id: 's3', dayOfWeek: 'Sexta-feira', startTime: '17:00', durationMinutes: 60, studentIds: ['u2', 'u3'], level: SkillLevel.BEGINNER, recurrence: 'SEMANAL' },
 ];
 
 export const MOCK_SESSIONS: TrainingSession[] = [

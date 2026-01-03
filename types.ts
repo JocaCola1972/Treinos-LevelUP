@@ -12,6 +12,8 @@ export enum SkillLevel {
   PRO = 'Pro'
 }
 
+export type RecurrenceType = 'PONTUAL' | 'SEMANAL' | 'QUINZENAL';
+
 export interface User {
   id: string;
   name: string;
@@ -19,7 +21,7 @@ export interface User {
   level: SkillLevel;
   avatar: string;
   phone: string;
-  password?: string; // Optional because on first login it might not exist
+  password?: string;
 }
 
 export interface Shift {
@@ -29,6 +31,8 @@ export interface Shift {
   durationMinutes: number;
   studentIds: string[];
   level: SkillLevel;
+  recurrence: RecurrenceType;
+  startDate?: string;
 }
 
 export interface TrainingSession {

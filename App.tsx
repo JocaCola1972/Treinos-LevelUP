@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Role, SkillLevel, Shift, TrainingSession, DAYS_OF_WEEK } from './types';
+import { User, Role, SkillLevel, Shift, TrainingSession, DAYS_OF_WEEK, RecurrenceType } from './types';
 import { MOCK_USERS, MOCK_SHIFTS, MOCK_SESSIONS } from './constants';
 import { getTrainingTips, analyzeSession } from './geminiService';
 import { supabase } from './supabaseClient';
@@ -50,7 +50,7 @@ const YouTubeEmbed = ({ url }: { url: string }) => {
   const videoId = getID(url);
   if (!videoId) return <p className="text-red-500 text-sm italic">Link de vídeo inválido</p>;
   return (
-    <div className="aspect-video w-full rounded-2xl overflow-hidden mt-4 shadow-xl border-4 border-petrol">
+    <div className="aspect-video w-full rounded-2xl overflow-hidden mt-4 shadow-xl border-4 border-petrol bg-black">
       <iframe
         width="100%"
         height="100%"
@@ -130,6 +130,8 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
   const [duration, setDuration] = useState(60);
   const [level, setLevel] = useState<SkillLevel>(SkillLevel.BEGINNER);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
+  const [recurrence, setRecurrence] = useState<RecurrenceType>('SEMANAL');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
 
   if (!isOpen) return null;
 
@@ -141,7 +143,9 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
       startTime: time,
       durationMinutes: duration,
       studentIds: selectedStudents,
-      level: level
+      level: level,
+      recurrence: recurrence,
+      startDate: startDate
     });
     onClose();
   };
@@ -154,13 +158,29 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-petrol/90 backdrop-blur-md">
       <div className="bg-white rounded-[2rem] w-full max-w-2xl p-8 shadow-2xl border-4 border-padelgreen max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-300">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="font-display font-bold text-petrol tracking-tight">PLANEAR TURNO</h3>
+          <h3 className="font-display font-bold text-petrol tracking-tight">AGENDAR TREINO</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-petrol transition-colors">
             <i className="fas fa-times text-2xl"></i>
           </button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-100 mb-4">
+            <div className="mb-4">
+              <p className="text-xs font-bold text-petrol uppercase tracking-widest mb-1">Recorrência do Treino</p>
+              <p className="text-[10px] text-slate-500 font-medium">Define a frequência com que este treino ocorre</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 bg-white p-1 rounded-xl border-2 border-slate-200">
+                <button type="button" onClick={() => setRecurrence('PONTUAL')} className={`px-2 py-2 rounded-lg text-[9px] font-black transition-all ${recurrence === 'PONTUAL' ? 'bg-petrol text-padelgreen shadow-md' : 'text-slate-400 hover:text-petrol'}`}>PONTUAL</button>
+                <button type="button" onClick={() => setRecurrence('SEMANAL')} className={`px-2 py-2 rounded-lg text-[9px] font-black transition-all ${recurrence === 'SEMANAL' ? 'bg-petrol text-padelgreen shadow-md' : 'text-slate-400 hover:text-petrol'}`}>SEMANAL</button>
+                <button type="button" onClick={() => setRecurrence('QUINZENAL')} className={`px-2 py-2 rounded-lg text-[9px] font-black transition-all ${recurrence === 'QUINZENAL' ? 'bg-petrol text-padelgreen shadow-md' : 'text-slate-400 hover:text-petrol'}`}>QUINZENAL</button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Data / Início</label>
+              <input type="date" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+            </div>
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Dia da Semana</label>
               <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={day} onChange={(e) => setDay(e.target.value)}>
@@ -175,15 +195,15 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Duração (minutos)</label>
               <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={duration} onChange={(e) => setDuration(parseInt(e.target.value))} min="30" step="15" required />
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Nível</label>
+            <div className="md:col-span-2">
+              <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Nível Sugerido</label>
               <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={level} onChange={(e) => setLevel(e.target.value as SkillLevel)}>
                 {Object.values(SkillLevel).map(l => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
           </div>
           <div>
-            <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Seleção de Alunos</label>
+            <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Convocatória (Alunos)</label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-48 overflow-y-auto p-4 border-2 border-slate-50 rounded-[1.5rem] bg-slate-50/50">
               {users.filter(u => u.role === Role.STUDENT).map(student => (
                 <button type="button" key={student.id} onClick={() => toggleStudent(student.id)} className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-all text-left ${selectedStudents.includes(student.id) ? 'bg-petrol border-petrol text-padelgreen shadow-md' : 'bg-white border-slate-100 text-slate-600 hover:border-padelgreen'}`}>
@@ -195,7 +215,7 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
           </div>
           <div className="flex gap-4 pt-6">
             <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" className="flex-1">Criar Turno</Button>
+            <Button type="submit" className="flex-1">Confirmar Agenda</Button>
           </div>
         </form>
       </div>
@@ -334,6 +354,7 @@ export default function App() {
   const [isTipsLoading, setIsTipsLoading] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [selectedHistoricalId, setSelectedHistoricalId] = useState<string | null>(null);
 
   // Sync with Supabase on start
   useEffect(() => {
@@ -357,7 +378,6 @@ export default function App() {
         setUsers(MOCK_USERS);
         setShifts(MOCK_SHIFTS);
         setSessions(MOCK_SESSIONS);
-        // Mostrar erro mais descritivo (ex: "Table users not found" ou "JWT expired")
         setConnectionError(err.message || "Erro desconhecido. A usar dados Offline.");
       }
       setIsLoading(false);
@@ -374,16 +394,6 @@ export default function App() {
     const tip = await getTrainingTips(currentUser?.level || "Iniciante", "Padel");
     setTips(tip);
     setIsTipsLoading(false);
-  };
-
-  const handleUpdatePassword = async (newPass: string) => {
-    if (!currentUser) return;
-    try {
-      await supabase.from('users').update({ password: newPass }).eq('id', currentUser.id);
-    } finally {
-      setCurrentUser({ ...currentUser, password: newPass });
-      alert('Perfil atualizado!');
-    }
   };
 
   const handleCreateUser = async (newUser: User) => {
@@ -412,12 +422,12 @@ export default function App() {
       await supabase.from('shifts').insert([newShift]);
     } finally {
       setShifts([...shifts, newShift]);
-      alert('Turno agendado!');
+      alert('Treino agendado com sucesso!');
     }
   };
 
   const handleDeleteShift = async (shiftId: string) => {
-    if (window.confirm('Eliminar este turno recorrente?')) {
+    if (window.confirm('Eliminar este agendamento?')) {
       try {
         await supabase.from('shifts').delete().eq('id', shiftId);
       } finally {
@@ -484,6 +494,30 @@ export default function App() {
   const activeSessions = sessions.filter(s => s.isActive && (currentUser.role !== Role.STUDENT || myShifts.some(ms => ms.id === s.shiftId)));
   const pastSessions = sessions.filter(s => s.completed && (currentUser.role !== Role.STUDENT || myShifts.some(ms => ms.id === s.shiftId)));
 
+  const getRecurrenceBadge = (recurrence: RecurrenceType) => {
+    switch (recurrence) {
+      case 'SEMANAL':
+        return (
+          <span className="bg-petrol text-padelgreen text-[8px] font-black px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+            <i className="fas fa-sync text-[7px]"></i> SEMANAL
+          </span>
+        );
+      case 'QUINZENAL':
+        return (
+          <span className="bg-padelgreen-dark text-petrol text-[8px] font-black px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
+            <i className="fas fa-history text-[7px]"></i> QUINZENAL
+          </span>
+        );
+      default:
+        return (
+          <span className="bg-slate-200 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">PONTUAL</span>
+        );
+    }
+  };
+
+  // Logic to handle selected session for viewing
+  const currentViewSession = selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId) : pastSessions[0];
+
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
       <header className="sticky top-0 z-50 bg-petrol border-b-4 border-padelgreen px-6 py-4 flex items-center justify-between shadow-2xl">
@@ -512,24 +546,51 @@ export default function App() {
                {isTipsLoading ? <p className="animate-pulse">Gerando dicas...</p> : <p>"{tips}"</p>}
             </div>
           </Card>
-          <Card title={currentUser.role === Role.STUDENT ? "A MINHA AGENDA" : "PLANEAMENTO SEMANAL"} icon={<i className="fas fa-calendar-check"></i>}>
+          
+          <Card title="AGENDA DE TREINOS" subtitle="Gestão de Horários" icon={<i className="fas fa-calendar-alt"></i>}>
             <div className="space-y-4">
-              {(currentUser.role === Role.ADMIN || currentUser.role === Role.COACH) && <Button variant="primary" className="w-full mb-6" onClick={() => setIsShiftModalOpen(true)}>NOVO TURNO</Button>}
-              {myShifts.length === 0 && <p className="text-xs text-slate-400 text-center py-4 italic uppercase">Nenhum turno planeado</p>}
+              {(currentUser.role === Role.ADMIN || currentUser.role === Role.COACH) && (
+                <Button variant="primary" className="w-full mb-6" onClick={() => setIsShiftModalOpen(true)}>
+                  <i className="fas fa-plus-circle mr-2"></i> AGENDAR NOVO
+                </Button>
+              )}
+              {myShifts.length === 0 && <p className="text-xs text-slate-400 text-center py-4 italic uppercase">Agenda vazia</p>}
               {myShifts.map(shift => (
                 <div key={shift.id} className="p-5 rounded-2xl border-2 border-slate-100 bg-white hover:border-petrol transition-all relative shadow-sm group">
                   {(currentUser.role === Role.ADMIN || currentUser.role === Role.COACH) && (
-                    <button onClick={() => handleDeleteShift(shift.id)} className="absolute top-2 right-2 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><i className="fas fa-trash-alt text-xs"></i></button>
+                    <button onClick={() => handleDeleteShift(shift.id)} className="absolute top-2 right-2 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2"><i className="fas fa-trash-alt text-[10px]"></i></button>
                   )}
                   <div className="flex justify-between items-start mb-3">
-                    <div><p className="font-display font-bold text-petrol text-[10px] mb-1 uppercase">{shift.dayOfWeek}</p><p className="text-lg font-bold text-petrol leading-none">{shift.startTime}</p></div>
-                    <span className="text-[9px] bg-padelgreen text-petrol px-2 py-1 rounded-lg font-black uppercase">{shift.level}</span>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <p className="font-display font-bold text-petrol text-[10px] uppercase">{shift.dayOfWeek}</p>
+                            {getRecurrenceBadge(shift.recurrence)}
+                        </div>
+                        <p className="text-xl font-bold text-petrol leading-none flex items-center gap-2">
+                            {shift.startTime}
+                            <span className="text-[10px] text-slate-400 font-normal">({shift.durationMinutes} min)</span>
+                        </p>
+                    </div>
+                    <span className="text-[9px] bg-padelgreen text-petrol px-2 py-1 rounded-lg font-black uppercase shadow-sm border border-petrol/10">{shift.level}</span>
                   </div>
-                  {(currentUser.role === Role.COACH || currentUser.role === Role.ADMIN) && <Button variant="secondary" className="w-full mt-5 py-2 text-[10px]" onClick={() => handleActivateSession(shift.id)}>ATIVAR AULA</Button>}
+                  
+                  <div className="flex -space-x-2 mt-4 overflow-hidden">
+                    {(shift.studentIds || []).map(sid => {
+                        const student = users.find(u => u.id === sid);
+                        return student ? <img key={sid} src={student.avatar} title={student.name} className="inline-block h-6 w-6 rounded-full ring-2 ring-white shadow-sm" /> : null;
+                    })}
+                  </div>
+
+                  {(currentUser.role === Role.COACH || currentUser.role === Role.ADMIN) && (
+                    <Button variant="secondary" className="w-full mt-5 py-2 text-[10px] font-black" onClick={() => handleActivateSession(shift.id)}>
+                        COMEÇAR TREINO <i className="fas fa-play text-[8px] ml-1"></i>
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
           </Card>
+
           {currentUser.role === Role.ADMIN && (
             <Card title="DATABASE" subtitle="Atletas" icon={<i className="fas fa-users-cog"></i>}>
               <Button variant="outline" className="w-full mb-6 py-2" onClick={() => setIsUserModalOpen(true)}>NOVO ALUNO</Button>
@@ -548,33 +609,143 @@ export default function App() {
 
         <div className="lg:col-span-8 space-y-12">
           <section>
-            <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">Court <span className="text-padelgreen bg-petrol px-4 py-1 ml-2">Live</span></h2>
+            <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase flex items-center gap-3">
+              <span className="w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
+              Court <span className="text-padelgreen bg-petrol px-4 py-1 ml-2">Live</span>
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {activeSessions.length === 0 && <div className="col-span-full py-10 text-center text-slate-300 italic uppercase text-xs">A aguardar início de treino...</div>}
+              {activeSessions.length === 0 && (
+                <div className="col-span-full py-16 text-center bg-white border-2 border-dashed border-slate-200 rounded-[3rem]">
+                    <i className="fas fa-table-tennis text-slate-100 text-6xl mb-4"></i>
+                    <p className="text-slate-400 italic uppercase text-xs font-bold tracking-widest">Nenhum treino a decorrer no momento</p>
+                </div>
+              )}
               {activeSessions.map(session => (
-                <div key={session.id} className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-b-8 border-b-padelgreen border-x-2 border-t-2 border-slate-50 relative overflow-hidden">
-                  <h3 className="font-display font-bold text-petrol text-lg mb-6">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek}</h3>
-                  {currentUser.role === Role.STUDENT ? (
-                    <Button variant={session.attendeeIds.includes(currentUser.id) ? "success" : "primary"} className="w-full py-4" onClick={() => handleConfirmAttendance(session.id)} disabled={session.attendeeIds.includes(currentUser.id)}>{session.attendeeIds.includes(currentUser.id) ? "ESTOU PRESENTE" : "CONFIRMAR PRESENÇA"}</Button>
-                  ) : <CoachCloser onFinish={(yt, notes) => handleCompleteSession(session.id, yt, notes)} />}
+                <div key={session.id} className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-b-8 border-b-padelgreen border-x-2 border-t-2 border-slate-50 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-24 h-24 bg-padelgreen/10 rounded-bl-full -mr-12 -mt-12 transition-all group-hover:w-32 group-hover:h-32"></div>
+                  <div className="relative z-10">
+                    <h3 className="font-display font-bold text-petrol text-lg mb-6 flex items-center gap-2">
+                        <i className="fas fa-clock text-padelgreen"></i>
+                        {shifts.find(s => s.id === session.shiftId)?.dayOfWeek}
+                    </h3>
+                    {currentUser.role === Role.STUDENT ? (
+                        <Button 
+                            variant={session.attendeeIds.includes(currentUser.id) ? "success" : "primary"} 
+                            className="w-full py-4" 
+                            onClick={() => handleConfirmAttendance(session.id)} 
+                            disabled={session.attendeeIds.includes(currentUser.id)}
+                        >
+                            {session.attendeeIds.includes(currentUser.id) ? "ESTOU NO CAMPO ✅" : "CONFIRMAR PRESENÇA 🎾"}
+                        </Button>
+                    ) : <CoachCloser onFinish={(yt, notes) => handleCompleteSession(session.id, yt, notes)} />}
+                  </div>
                 </div>
               ))}
             </div>
           </section>
+          
           <section>
-            <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">Sessões de <span className="text-white bg-black px-4 py-1 ml-2">treino</span></h2>
-            <div className="space-y-8">
-              {pastSessions.map(session => (
-                <div key={session.id} className="bg-white p-10 rounded-[3rem] shadow-xl border-2 border-slate-100 flex flex-col md:flex-row gap-10">
-                  <div className="flex-1">
-                    <h3 className="font-display font-bold text-petrol text-xl mb-6">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek} • {session.date}</h3>
-                    <p className="text-petrol font-medium bg-slate-50 p-6 rounded-2xl border-l-4 border-petrol mb-6">{session.notes}</p>
-                    {session.aiInsights && <div className="bg-padelgreen/10 p-6 rounded-[2rem] border-2 border-padelgreen/30 text-xs font-bold text-petrol">{session.aiInsights}</div>}
-                  </div>
-                  {session.youtubeUrl && <div className="w-full md:w-80"><YouTubeEmbed url={session.youtubeUrl} /></div>}
+            <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">
+                Registo de <span className="text-white bg-black px-4 py-1 ml-2">Treinos</span>
+            </h2>
+            
+            {pastSessions.length === 0 ? (
+                <div className="py-20 text-center bg-white rounded-[3rem] border-2 border-slate-100 shadow-xl">
+                    <i className="fas fa-folder-open text-slate-100 text-6xl mb-4"></i>
+                    <p className="text-slate-400 uppercase font-black text-xs tracking-widest">Ainda não tens treinos finalizados</p>
                 </div>
-              ))}
-            </div>
+            ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                    {/* Left: Session Explorer */}
+                    <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
+                        <div className="p-5 bg-petrol text-white">
+                            <h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4>
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                            {pastSessions.map(session => (
+                                <button 
+                                    key={session.id}
+                                    onClick={() => setSelectedHistoricalId(session.id)}
+                                    className={`w-full text-left p-5 border-b border-slate-50 transition-all hover:bg-slate-50 group flex items-center justify-between ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'bg-slate-50 border-l-4 border-l-padelgreen' : ''}`}
+                                >
+                                    <div>
+                                        <p className={`text-[10px] font-black uppercase mb-0.5 ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'text-petrol' : 'text-slate-400'}`}>
+                                            {session.date}
+                                        </p>
+                                        <p className="font-bold text-petrol text-xs">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek}</p>
+                                    </div>
+                                    {session.youtubeUrl && <i className="fab fa-youtube text-red-500 text-xs opacity-50 group-hover:opacity-100"></i>}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Right: Session Viewer */}
+                    <div className="lg:col-span-3">
+                        {currentViewSession && (
+                            <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100 animate-in fade-in duration-500">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 border-b-2 border-slate-50 pb-8">
+                                    <div>
+                                        <span className="text-[10px] bg-petrol text-padelgreen px-3 py-1 rounded-full font-black uppercase tracking-widest mb-3 inline-block">SESSÃO CONCLUÍDA</span>
+                                        <h3 className="font-display font-bold text-petrol text-2xl">{shifts.find(s => s.id === currentViewSession.shiftId)?.dayOfWeek} • {currentViewSession.date}</h3>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <div className="text-right hidden sm:block">
+                                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Duração Técnica</p>
+                                            <p className="font-bold text-petrol">{shifts.find(s => s.id === currentViewSession.shiftId)?.durationMinutes} Minutos</p>
+                                        </div>
+                                        <span className="w-12 h-12 bg-padelgreen rounded-2xl flex items-center justify-center text-petrol shadow-lg">
+                                            <i className="fas fa-clipboard-check text-xl"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 xl:grid-cols-5 gap-10">
+                                    <div className="xl:col-span-3 space-y-8">
+                                        <div>
+                                            <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                                <i className="fas fa-edit text-padelgreen"></i> Apontamentos do Treinador
+                                            </h4>
+                                            <div className="bg-slate-50 p-6 rounded-[2rem] border-2 border-slate-100 text-petrol font-medium leading-relaxed italic relative">
+                                                <i className="fas fa-quote-left absolute -top-2 -left-2 text-padelgreen text-2xl opacity-40"></i>
+                                                "{currentViewSession.notes}"
+                                            </div>
+                                        </div>
+
+                                        {currentViewSession.aiInsights && (
+                                            <div>
+                                                <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                                    <i className="fas fa-magic text-padelgreen"></i> Análise de Performance (IA)
+                                                </h4>
+                                                <div className="bg-padelgreen/10 p-6 rounded-[2rem] border-2 border-padelgreen/30 text-xs font-bold text-petrol leading-relaxed">
+                                                    {currentViewSession.aiInsights}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="xl:col-span-2">
+                                        <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                            <i className="fas fa-video text-padelgreen"></i> Gravação do Treino
+                                        </h4>
+                                        {currentViewSession.youtubeUrl ? (
+                                            <div className="group relative">
+                                                <YouTubeEmbed url={currentViewSession.youtubeUrl} />
+                                                <p className="mt-4 text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center">VideoID: {currentViewSession.youtubeUrl.split('v=')[1]?.substring(0,11)}</p>
+                                            </div>
+                                        ) : (
+                                            <div className="aspect-video bg-slate-100 rounded-[2rem] flex flex-col items-center justify-center border-2 border-dashed border-slate-200">
+                                                <i className="fas fa-video-slash text-slate-300 text-4xl mb-3"></i>
+                                                <p className="text-[9px] text-slate-400 font-black uppercase">Sem gravação disponível</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
           </section>
         </div>
       </main>
@@ -598,9 +769,14 @@ const CoachCloser = ({ onFinish }: { onFinish: (yt: string, notes: string) => vo
 
   return (
     <div className="space-y-4">
-      <input type="text" placeholder="URL VÍDEO YOUTUBE" className="w-full text-[10px] py-3 px-4 border-2 rounded-xl" value={yt} onChange={e => setYt(e.target.value)} />
-      <textarea placeholder="NOTAS TÉCNICAS..." className="w-full text-xs p-4 border-2 rounded-2xl h-32" value={notes} onChange={e => setNotes(e.target.value)} />
-      <Button variant="secondary" className="w-full" onClick={handleFinish} disabled={loading || !notes}>{loading ? "A ANALISAR..." : "FECHAR SESSÃO"}</Button>
+      <div className="relative">
+        <i className="fab fa-youtube absolute left-4 top-1/2 -translate-y-1/2 text-red-500"></i>
+        <input type="text" placeholder="URL VÍDEO (OPCIONAL)" className="w-full text-[10px] py-3 pl-10 pr-4 border-2 border-slate-100 rounded-xl focus:border-red-500 outline-none transition-all" value={yt} onChange={e => setYt(e.target.value)} />
+      </div>
+      <textarea placeholder="RESUMO TÉCNICO DO TREINO..." className="w-full text-xs p-4 border-2 border-slate-100 rounded-2xl h-32 focus:border-petrol outline-none transition-all" value={notes} onChange={e => setNotes(e.target.value)} />
+      <Button variant="secondary" className="w-full py-4" onClick={handleFinish} disabled={loading || !notes}>
+        {loading ? <i className="fas fa-spinner animate-spin"></i> : "ENCERRAR SESSÃO E ANALISAR"}
+      </Button>
     </div>
   );
 };
