@@ -1,0 +1,7 @@
+{
+  "name": "Padel LevelUp",
+  "description": "Plataforma de gestão de sessões de treino de Padel para treinadores e alunos, com agendamento, controlo de presenças e análise de performance.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
