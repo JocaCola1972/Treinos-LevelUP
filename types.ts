@@ -5,20 +5,12 @@ export enum Role {
   ADMIN = 'ADMIN'
 }
 
-export enum SkillLevel {
-  BEGINNER = 'Iniciante',
-  INTERMEDIATE = 'Intermédio',
-  ADVANCED = 'Avançado',
-  PRO = 'Pro'
-}
-
 export type RecurrenceType = 'PONTUAL' | 'SEMANAL' | 'QUINZENAL';
 
 export interface User {
   id: string;
   name: string;
   role: Role;
-  level: SkillLevel;
   avatar: string;
   phone: string;
   password?: string;
@@ -30,7 +22,6 @@ export interface Shift {
   startTime: string;
   durationMinutes: number;
   studentIds: string[];
-  level: SkillLevel;
   recurrence: RecurrenceType;
   startDate?: string;
 }

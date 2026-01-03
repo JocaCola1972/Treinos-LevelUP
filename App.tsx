@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Role, SkillLevel, Shift, TrainingSession, DAYS_OF_WEEK, RecurrenceType } from './types';
+import { User, Role, Shift, TrainingSession, DAYS_OF_WEEK, RecurrenceType } from './types';
 import { MOCK_USERS, MOCK_SHIFTS, MOCK_SESSIONS } from './constants';
 import { getTrainingTips, analyzeSession } from './geminiService';
 import { supabase } from './supabaseClient';
@@ -69,7 +69,6 @@ const YouTubeEmbed = ({ url }: { url: string }) => {
 const UserModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () => void, onSave: (user: User) => void }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [level, setLevel] = useState<SkillLevel>(SkillLevel.BEGINNER);
 
   if (!isOpen) return null;
 
@@ -79,7 +78,6 @@ const UserModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () =
       id: `u-${Date.now()}`,
       name,
       phone,
-      level,
       role: Role.STUDENT,
       avatar: `https://i.pravatar.cc/150?u=${phone}`
     });
@@ -107,12 +105,6 @@ const UserModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () =
               <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Telemóvel</label>
               <input type="tel" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={phone} onChange={(e) => setPhone(e.target.value)} required />
             </div>
-            <div>
-              <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Nível de Jogo</label>
-              <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={level} onChange={(e) => setLevel(e.target.value as SkillLevel)}>
-                {Object.values(SkillLevel).map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
-            </div>
           </div>
           <div className="flex gap-4 pt-4">
             <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
@@ -128,7 +120,6 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
   const [day, setDay] = useState(DAYS_OF_WEEK[0]);
   const [time, setTime] = useState('18:00');
   const [duration, setDuration] = useState(60);
-  const [level, setLevel] = useState<SkillLevel>(SkillLevel.BEGINNER);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [recurrence, setRecurrence] = useState<RecurrenceType>('SEMANAL');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
@@ -143,7 +134,6 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
       startTime: time,
       durationMinutes: duration,
       studentIds: selectedStudents,
-      level: level,
       recurrence: recurrence,
       startDate: startDate
     });
@@ -194,12 +184,6 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Duração (minutos)</label>
               <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={duration} onChange={(e) => setDuration(parseInt(e.target.value))} min="30" step="15" required />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Nível Sugerido</label>
-              <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={level} onChange={(e) => setLevel(e.target.value as SkillLevel)}>
-                {Object.values(SkillLevel).map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
             </div>
           </div>
           <div>
@@ -391,7 +375,7 @@ export default function App() {
 
   const fetchInitialTips = async () => {
     setIsTipsLoading(true);
-    const tip = await getTrainingTips(currentUser?.level || "Iniciante", "Padel");
+    const tip = await getTrainingTips("Padel");
     setTips(tip);
     setIsTipsLoading(false);
   };
@@ -515,6 +499,17 @@ export default function App() {
     }
   };
 
+  // Helper to format startDate for the Agenda
+  const formatShiftDate = (dateStr?: string) => {
+    if (!dateStr) return null;
+    try {
+      const [year, month, day] = dateStr.split('-');
+      return `${day}/${month}`;
+    } catch (e) {
+      return null;
+    }
+  };
+
   // Logic to handle selected session for viewing
   const currentViewSession = selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId) : pastSessions[0];
 
@@ -531,7 +526,9 @@ export default function App() {
         <div className="flex items-center gap-5">
           <div className="text-right hidden sm:block">
             <p className="font-bold text-sm text-white">{currentUser.name}</p>
-            <p className="text-[10px] text-padelgreen font-bold uppercase tracking-wider">{currentUser.role === Role.ADMIN ? 'Gestor' : currentUser.role === Role.COACH ? 'Coach Pro' : `Atleta • ${currentUser.level}`}</p>
+            <p className="text-[10px] text-padelgreen font-bold uppercase tracking-wider">
+              {currentUser.role === Role.ADMIN ? 'Gestor' : currentUser.role === Role.COACH ? 'Coach Pro' : `Atleta`}
+            </p>
           </div>
           <button onClick={() => setCurrentUser(null)} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10"><i className="fas fa-power-off"></i></button>
           <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-padelgreen shadow-lg" />
@@ -563,7 +560,10 @@ export default function App() {
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                            <p className="font-display font-bold text-petrol text-[10px] uppercase">{shift.dayOfWeek}</p>
+                            <p className="font-display font-bold text-petrol text-[10px] uppercase flex items-center gap-1.5">
+                                <i className="far fa-calendar text-[8px] text-padelgreen"></i>
+                                {shift.dayOfWeek} {shift.startDate && <span className="text-padelgreen opacity-80 ml-1">[{formatShiftDate(shift.startDate)}]</span>}
+                            </p>
                             {getRecurrenceBadge(shift.recurrence)}
                         </div>
                         <p className="text-xl font-bold text-petrol leading-none flex items-center gap-2">
@@ -571,7 +571,6 @@ export default function App() {
                             <span className="text-[10px] text-slate-400 font-normal">({shift.durationMinutes} min)</span>
                         </p>
                     </div>
-                    <span className="text-[9px] bg-padelgreen text-petrol px-2 py-1 rounded-lg font-black uppercase shadow-sm border border-petrol/10">{shift.level}</span>
                   </div>
                   
                   <div className="flex -space-x-2 mt-4 overflow-hidden">
