@@ -339,6 +339,7 @@ export default function App() {
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [selectedHistoricalId, setSelectedHistoricalId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'sessions' | 'athletes'>('sessions');
 
   // Sync with Supabase on start
   useEffect(() => {
@@ -433,6 +434,7 @@ export default function App() {
       await supabase.from('sessions').insert([newSession]);
     } finally {
       setSessions([newSession, ...sessions]);
+      setActiveTab('sessions');
     }
   };
 
@@ -536,6 +538,7 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
+        {/* Sidebar (4 columns) */}
         <div className="lg:col-span-4 space-y-10">
           <Card title="RECOMENDAÇÕES" subtitle="AI Personal Trainer" icon={<i className="fas fa-brain"></i>}>
             <div className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 italic text-petrol font-medium text-sm leading-relaxed relative">
@@ -589,163 +592,211 @@ export default function App() {
               ))}
             </div>
           </Card>
+        </div>
 
-          {currentUser.role === Role.ADMIN && (
-            <Card title="DATABASE" subtitle="Atletas" icon={<i className="fas fa-users-cog"></i>}>
-              <Button variant="outline" className="w-full mb-6 py-2" onClick={() => setIsUserModalOpen(true)}>NOVO ALUNO</Button>
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+        {/* Content Area (8 columns) */}
+        <div className="lg:col-span-8 space-y-8">
+          {/* Tab Navigation (Visible for ADMIN to switch, others just stay on sessions) */}
+          <div className="flex items-center gap-6 border-b-2 border-slate-200 pb-px">
+            <button 
+              onClick={() => setActiveTab('sessions')}
+              className={`pb-4 px-2 font-display text-xs font-bold transition-all relative ${activeTab === 'sessions' ? 'text-petrol' : 'text-slate-400 hover:text-petrol'}`}
+            >
+              SESSÕES DE TREINO
+              {activeTab === 'sessions' && <div className="absolute bottom-[-2px] left-0 w-full h-1 bg-padelgreen"></div>}
+            </button>
+            {currentUser.role === Role.ADMIN && (
+              <button 
+                onClick={() => setActiveTab('athletes')}
+                className={`pb-4 px-2 font-display text-xs font-bold transition-all relative ${activeTab === 'athletes' ? 'text-petrol' : 'text-slate-400 hover:text-petrol'}`}
+              >
+                FUTUROS CAMPEÕES
+                {activeTab === 'athletes' && <div className="absolute bottom-[-2px] left-0 w-full h-1 bg-padelgreen"></div>}
+              </button>
+            )}
+          </div>
+
+          {activeTab === 'sessions' ? (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <section>
+                <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase flex items-center gap-3">
+                  <span className="w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
+                  Court <span className="text-padelgreen bg-petrol px-4 py-1 ml-2">Live</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {activeSessions.length === 0 && (
+                    <div className="col-span-full py-16 text-center bg-white border-2 border-dashed border-slate-200 rounded-[3rem]">
+                        <i className="fas fa-table-tennis text-slate-100 text-6xl mb-4"></i>
+                        <p className="text-slate-400 italic uppercase text-xs font-bold tracking-widest">Nenhum treino a decorrer no momento</p>
+                    </div>
+                  )}
+                  {activeSessions.map(session => (
+                    <div key={session.id} className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-b-8 border-b-padelgreen border-x-2 border-t-2 border-slate-50 relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-24 h-24 bg-padelgreen/10 rounded-bl-full -mr-12 -mt-12 transition-all group-hover:w-32 group-hover:h-32"></div>
+                      <div className="relative z-10">
+                        <h3 className="font-display font-bold text-petrol text-lg mb-6 flex items-center gap-2">
+                            <i className="fas fa-clock text-padelgreen"></i>
+                            {shifts.find(s => s.id === session.shiftId)?.dayOfWeek}
+                        </h3>
+                        {currentUser.role === Role.STUDENT ? (
+                            <Button 
+                                variant={session.attendeeIds.includes(currentUser.id) ? "success" : "primary"} 
+                                className="w-full py-4" 
+                                onClick={() => handleConfirmAttendance(session.id)} 
+                                disabled={session.attendeeIds.includes(currentUser.id)}
+                            >
+                                {session.attendeeIds.includes(currentUser.id) ? "ESTOU NO CAMPO ✅" : "CONFIRMAR PRESENÇA 🎾"}
+                            </Button>
+                        ) : <CoachCloser onFinish={(yt, notes) => handleCompleteSession(session.id, yt, notes)} />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              
+              <section>
+                <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">
+                    Registo de <span className="text-white bg-black px-4 py-1 ml-2">Treinos</span>
+                </h2>
+                
+                {pastSessions.length === 0 ? (
+                    <div className="py-20 text-center bg-white rounded-[3rem] border-2 border-slate-100 shadow-xl">
+                        <i className="fas fa-folder-open text-slate-100 text-6xl mb-4"></i>
+                        <p className="text-slate-400 uppercase font-black text-xs tracking-widest">Ainda não tens treinos finalizados</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                        {/* Left: Session Explorer */}
+                        <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
+                            <div className="p-5 bg-petrol text-white">
+                                <h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4>
+                            </div>
+                            <div className="flex-1 overflow-y-auto">
+                                {pastSessions.map(session => (
+                                    <button 
+                                        key={session.id}
+                                        onClick={() => setSelectedHistoricalId(session.id)}
+                                        className={`w-full text-left p-5 border-b border-slate-50 transition-all hover:bg-slate-50 group flex items-center justify-between ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'bg-slate-50 border-l-4 border-l-padelgreen' : ''}`}
+                                    >
+                                        <div>
+                                            <p className={`text-[10px] font-black uppercase mb-0.5 ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'text-petrol' : 'text-slate-400'}`}>
+                                                {session.date}
+                                            </p>
+                                            <p className="font-bold text-petrol text-xs">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek}</p>
+                                        </div>
+                                        {session.youtubeUrl && <i className="fab fa-youtube text-red-500 text-xs opacity-50 group-hover:opacity-100"></i>}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Right: Session Viewer */}
+                        <div className="lg:col-span-3">
+                            {currentViewSession && (
+                                <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100 animate-in fade-in duration-500">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 border-b-2 border-slate-50 pb-8">
+                                        <div>
+                                            <span className="text-[10px] bg-petrol text-padelgreen px-3 py-1 rounded-full font-black uppercase tracking-widest mb-3 inline-block">SESSÃO CONCLUÍDA</span>
+                                            <h3 className="font-display font-bold text-petrol text-2xl">{shifts.find(s => s.id === currentViewSession.shiftId)?.dayOfWeek} • {currentViewSession.date}</h3>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-right hidden sm:block">
+                                                <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Duração Técnica</p>
+                                                <p className="font-bold text-petrol">{shifts.find(s => s.id === currentViewSession.shiftId)?.durationMinutes} Minutos</p>
+                                            </div>
+                                            <span className="w-12 h-12 bg-padelgreen rounded-2xl flex items-center justify-center text-petrol shadow-lg">
+                                                <i className="fas fa-clipboard-check text-xl"></i>
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 xl:grid-cols-5 gap-10">
+                                        <div className="xl:col-span-3 space-y-8">
+                                            <div>
+                                                <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                                    <i className="fas fa-edit text-padelgreen"></i> Apontamentos do Treinador
+                                                </h4>
+                                                <div className="bg-slate-50 p-6 rounded-[2rem] border-2 border-slate-100 text-petrol font-medium leading-relaxed italic relative">
+                                                    <i className="fas fa-quote-left absolute -top-2 -left-2 text-padelgreen text-2xl opacity-40"></i>
+                                                    "{currentViewSession.notes}"
+                                                </div>
+                                            </div>
+
+                                            {currentViewSession.aiInsights && (
+                                                <div>
+                                                    <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                                        <i className="fas fa-magic text-padelgreen"></i> Análise de Performance (IA)
+                                                    </h4>
+                                                    <div className="bg-padelgreen/10 p-6 rounded-[2rem] border-2 border-padelgreen/30 text-xs font-bold text-petrol leading-relaxed">
+                                                        {currentViewSession.aiInsights}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="xl:col-span-2">
+                                            <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                                <i className="fas fa-video text-padelgreen"></i> Gravação do Treino
+                                            </h4>
+                                            {currentViewSession.youtubeUrl ? (
+                                                <div className="group relative">
+                                                    <YouTubeEmbed url={currentViewSession.youtubeUrl} />
+                                                    <p className="mt-4 text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center">VideoID: {currentViewSession.youtubeUrl.split('v=')[1]?.substring(0,11)}</p>
+                                                </div>
+                                            ) : (
+                                                <div className="aspect-video bg-slate-100 rounded-[2rem] flex flex-col items-center justify-center border-2 border-dashed border-slate-200">
+                                                    <i className="fas fa-video-slash text-slate-300 text-4xl mb-3"></i>
+                                                    <p className="text-[9px] text-slate-400 font-black uppercase">Sem gravação disponível</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+              </section>
+            </div>
+          ) : (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="flex justify-between items-center mb-10">
+                <div>
+                  <h2 className="font-display font-bold text-petrol text-3xl uppercase tracking-tighter">Futuros <span className="text-padelgreen bg-petrol px-4 py-1">Campeões</span></h2>
+                  <p className="text-slate-400 text-sm mt-2 font-medium">Gestão e registo de todos os atletas da academia.</p>
+                </div>
+                <Button variant="primary" onClick={() => setIsUserModalOpen(true)}>
+                  <i className="fas fa-user-plus mr-2"></i> ADICIONAR ATLETA
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {users.map(u => (
-                  <div key={u.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border-2 border-transparent hover:border-padelgreen transition-all group">
-                    <img src={u.avatar} className="w-10 h-10 rounded-full" />
-                    <div className="flex-1 min-w-0"><p className="font-bold text-petrol truncate text-sm">{u.name}</p></div>
-                    {u.id !== currentUser.id && <button onClick={() => handleDeleteUser(u.id)} className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"><i className="fas fa-trash-alt"></i></button>}
+                  <div key={u.id} className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 hover:border-padelgreen transition-all group relative flex items-center gap-4 shadow-sm hover:shadow-xl translate-y-0 hover:-translate-y-1">
+                    <div className="relative">
+                      <img src={u.avatar} className="w-16 h-16 rounded-full border-4 border-slate-50 shadow-md" />
+                      <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${u.role === Role.ADMIN ? 'bg-amber-400' : u.role === Role.COACH ? 'bg-petrol' : 'bg-padelgreen'}`}></div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-display font-bold text-petrol text-[10px] tracking-widest uppercase truncate">{u.name}</p>
+                      <p className="text-slate-400 text-xs font-medium mt-1"><i className="fas fa-phone-alt text-[8px] mr-1"></i> {u.phone}</p>
+                      <div className="flex gap-1 mt-2">
+                        <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500">{u.role}</span>
+                      </div>
+                    </div>
+                    {u.id !== currentUser.id && (
+                      <button 
+                        onClick={() => handleDeleteUser(u.id)} 
+                        className="absolute top-4 right-4 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2"
+                      >
+                        <i className="fas fa-trash-alt"></i>
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
-            </Card>
-          )}
-        </div>
-
-        <div className="lg:col-span-8 space-y-12">
-          <section>
-            <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase flex items-center gap-3">
-              <span className="w-3 h-3 bg-red-500 rounded-full animate-ping"></span>
-              Court <span className="text-padelgreen bg-petrol px-4 py-1 ml-2">Live</span>
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {activeSessions.length === 0 && (
-                <div className="col-span-full py-16 text-center bg-white border-2 border-dashed border-slate-200 rounded-[3rem]">
-                    <i className="fas fa-table-tennis text-slate-100 text-6xl mb-4"></i>
-                    <p className="text-slate-400 italic uppercase text-xs font-bold tracking-widest">Nenhum treino a decorrer no momento</p>
-                </div>
-              )}
-              {activeSessions.map(session => (
-                <div key={session.id} className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-b-8 border-b-padelgreen border-x-2 border-t-2 border-slate-50 relative overflow-hidden group">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-padelgreen/10 rounded-bl-full -mr-12 -mt-12 transition-all group-hover:w-32 group-hover:h-32"></div>
-                  <div className="relative z-10">
-                    <h3 className="font-display font-bold text-petrol text-lg mb-6 flex items-center gap-2">
-                        <i className="fas fa-clock text-padelgreen"></i>
-                        {shifts.find(s => s.id === session.shiftId)?.dayOfWeek}
-                    </h3>
-                    {currentUser.role === Role.STUDENT ? (
-                        <Button 
-                            variant={session.attendeeIds.includes(currentUser.id) ? "success" : "primary"} 
-                            className="w-full py-4" 
-                            onClick={() => handleConfirmAttendance(session.id)} 
-                            disabled={session.attendeeIds.includes(currentUser.id)}
-                        >
-                            {session.attendeeIds.includes(currentUser.id) ? "ESTOU NO CAMPO ✅" : "CONFIRMAR PRESENÇA 🎾"}
-                        </Button>
-                    ) : <CoachCloser onFinish={(yt, notes) => handleCompleteSession(session.id, yt, notes)} />}
-                  </div>
-                </div>
-              ))}
             </div>
-          </section>
-          
-          <section>
-            <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">
-                Registo de <span className="text-white bg-black px-4 py-1 ml-2">Treinos</span>
-            </h2>
-            
-            {pastSessions.length === 0 ? (
-                <div className="py-20 text-center bg-white rounded-[3rem] border-2 border-slate-100 shadow-xl">
-                    <i className="fas fa-folder-open text-slate-100 text-6xl mb-4"></i>
-                    <p className="text-slate-400 uppercase font-black text-xs tracking-widest">Ainda não tens treinos finalizados</p>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                    {/* Left: Session Explorer */}
-                    <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
-                        <div className="p-5 bg-petrol text-white">
-                            <h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4>
-                        </div>
-                        <div className="flex-1 overflow-y-auto">
-                            {pastSessions.map(session => (
-                                <button 
-                                    key={session.id}
-                                    onClick={() => setSelectedHistoricalId(session.id)}
-                                    className={`w-full text-left p-5 border-b border-slate-50 transition-all hover:bg-slate-50 group flex items-center justify-between ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'bg-slate-50 border-l-4 border-l-padelgreen' : ''}`}
-                                >
-                                    <div>
-                                        <p className={`text-[10px] font-black uppercase mb-0.5 ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'text-petrol' : 'text-slate-400'}`}>
-                                            {session.date}
-                                        </p>
-                                        <p className="font-bold text-petrol text-xs">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek}</p>
-                                    </div>
-                                    {session.youtubeUrl && <i className="fab fa-youtube text-red-500 text-xs opacity-50 group-hover:opacity-100"></i>}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Right: Session Viewer */}
-                    <div className="lg:col-span-3">
-                        {currentViewSession && (
-                            <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100 animate-in fade-in duration-500">
-                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 border-b-2 border-slate-50 pb-8">
-                                    <div>
-                                        <span className="text-[10px] bg-petrol text-padelgreen px-3 py-1 rounded-full font-black uppercase tracking-widest mb-3 inline-block">SESSÃO CONCLUÍDA</span>
-                                        <h3 className="font-display font-bold text-petrol text-2xl">{shifts.find(s => s.id === currentViewSession.shiftId)?.dayOfWeek} • {currentViewSession.date}</h3>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <div className="text-right hidden sm:block">
-                                            <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Duração Técnica</p>
-                                            <p className="font-bold text-petrol">{shifts.find(s => s.id === currentViewSession.shiftId)?.durationMinutes} Minutos</p>
-                                        </div>
-                                        <span className="w-12 h-12 bg-padelgreen rounded-2xl flex items-center justify-center text-petrol shadow-lg">
-                                            <i className="fas fa-clipboard-check text-xl"></i>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-1 xl:grid-cols-5 gap-10">
-                                    <div className="xl:col-span-3 space-y-8">
-                                        <div>
-                                            <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                                <i className="fas fa-edit text-padelgreen"></i> Apontamentos do Treinador
-                                            </h4>
-                                            <div className="bg-slate-50 p-6 rounded-[2rem] border-2 border-slate-100 text-petrol font-medium leading-relaxed italic relative">
-                                                <i className="fas fa-quote-left absolute -top-2 -left-2 text-padelgreen text-2xl opacity-40"></i>
-                                                "{currentViewSession.notes}"
-                                            </div>
-                                        </div>
-
-                                        {currentViewSession.aiInsights && (
-                                            <div>
-                                                <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                                    <i className="fas fa-magic text-padelgreen"></i> Análise de Performance (IA)
-                                                </h4>
-                                                <div className="bg-padelgreen/10 p-6 rounded-[2rem] border-2 border-padelgreen/30 text-xs font-bold text-petrol leading-relaxed">
-                                                    {currentViewSession.aiInsights}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="xl:col-span-2">
-                                        <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                            <i className="fas fa-video text-padelgreen"></i> Gravação do Treino
-                                        </h4>
-                                        {currentViewSession.youtubeUrl ? (
-                                            <div className="group relative">
-                                                <YouTubeEmbed url={currentViewSession.youtubeUrl} />
-                                                <p className="mt-4 text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center">VideoID: {currentViewSession.youtubeUrl.split('v=')[1]?.substring(0,11)}</p>
-                                            </div>
-                                        ) : (
-                                            <div className="aspect-video bg-slate-100 rounded-[2rem] flex flex-col items-center justify-center border-2 border-dashed border-slate-200">
-                                                <i className="fas fa-video-slash text-slate-300 text-4xl mb-3"></i>
-                                                <p className="text-[9px] text-slate-400 font-black uppercase">Sem gravação disponível</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-          </section>
+          )}
         </div>
       </main>
 
