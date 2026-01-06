@@ -66,23 +66,38 @@ const YouTubeEmbed = ({ url }: { url: string }) => {
 
 // --- Modals ---
 
-const UserModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () => void, onSave: (user: User) => void }) => {
+const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: boolean, onClose: () => void, onSave: (user: User) => void | Promise<void>, editingUser?: User | null, isAdmin: boolean }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<Role>(Role.STUDENT);
+
+  useEffect(() => {
+    if (editingUser) {
+      setName(editingUser.name);
+      setPhone(editingUser.phone);
+      setPassword(editingUser.password || '');
+      setRole(editingUser.role);
+    } else {
+      setName('');
+      setPhone('');
+      setPassword('');
+      setRole(Role.STUDENT);
+    }
+  }, [editingUser, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave({
-      id: `u-${Date.now()}`,
+      id: editingUser?.id || `u-${Date.now()}`,
       name,
       phone,
-      role: Role.STUDENT,
-      avatar: `https://i.pravatar.cc/150?u=${phone}`
+      password: password || undefined,
+      role: role,
+      avatar: editingUser?.avatar || `https://i.pravatar.cc/150?u=${phone}`
     });
-    setName('');
-    setPhone('');
     onClose();
   };
 
@@ -90,7 +105,9 @@ const UserModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () =
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-petrol/90 backdrop-blur-md">
       <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl border-4 border-padelgreen animate-in fade-in zoom-in duration-300">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="font-display font-bold text-petrol tracking-tight">NOVO ATLETA</h3>
+          <h3 className="font-display font-bold text-petrol tracking-tight">
+            {editingUser ? (editingUser.id === 'self' ? 'O MEU PERFIL' : 'EDITAR ATLETA') : 'NOVO ATLETA'}
+          </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-petrol transition-colors">
             <i className="fas fa-times text-2xl"></i>
           </button>
@@ -99,16 +116,34 @@ const UserModal = ({ isOpen, onClose, onSave }: { isOpen: boolean, onClose: () =
           <div className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Nome Completo</label>
-              <input type="text" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={name} onChange={(e) => setName(e.target.value)} required />
+              <input type="text" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all font-bold text-petrol" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Telemóvel</label>
-              <input type="tel" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+              <input type="tel" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all font-bold text-petrol" value={phone} onChange={(e) => setPhone(e.target.value)} required />
             </div>
+            <div>
+              <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Password de Acesso</label>
+              <input type="password" placeholder="Mínimo 4 caracteres" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all font-bold text-petrol" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </div>
+            {isAdmin && (
+              <div>
+                <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Cargo / Role</label>
+                <select 
+                  className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all font-bold text-petrol" 
+                  value={role} 
+                  onChange={(e) => setRole(e.target.value as Role)}
+                >
+                  <option value={Role.STUDENT}>STUDENT</option>
+                  <option value={Role.COACH}>COACH</option>
+                  <option value={Role.ADMIN}>ADMIN</option>
+                </select>
+              </div>
+            )}
           </div>
           <div className="flex gap-4 pt-4">
             <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" className="flex-1">Adicionar</Button>
+            <Button type="submit" className="flex-1">{editingUser ? 'Guardar' : 'Adicionar'}</Button>
           </div>
         </form>
       </div>
@@ -338,6 +373,7 @@ export default function App() {
   const [isTipsLoading, setIsTipsLoading] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedHistoricalId, setSelectedHistoricalId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'sessions' | 'athletes'>('sessions');
 
@@ -381,12 +417,43 @@ export default function App() {
     setIsTipsLoading(false);
   };
 
-  const handleCreateUser = async (newUser: User) => {
+  const handleSaveUser = async (userToSave: User) => {
     try {
-      await supabase.from('users').insert([newUser]);
+      if (editingUser) {
+        // Update
+        const { error } = await supabase.from('users').update({
+          name: userToSave.name,
+          phone: userToSave.phone,
+          password: userToSave.password,
+          role: userToSave.role
+        }).eq('id', userToSave.id);
+        
+        if (error) throw error;
+        
+        setUsers(users.map(u => u.id === userToSave.id ? userToSave : u));
+        
+        // If it's the current user, update the state
+        if (currentUser && currentUser.id === userToSave.id) {
+          setCurrentUser(userToSave);
+        }
+        
+        alert('Dados atualizados com sucesso!');
+      } else {
+        // Create
+        const { error } = await supabase.from('users').insert([userToSave]);
+        if (error) throw error;
+        setUsers([...users, userToSave]);
+        alert('Atleta adicionado!');
+      }
+    } catch (err: any) {
+      console.error("Save User Error:", err);
+      // Fallback local
+      setUsers(users.some(u => u.id === userToSave.id) ? users.map(u => u.id === userToSave.id ? userToSave : u) : [...users, userToSave]);
+      if (currentUser && currentUser.id === userToSave.id) setCurrentUser(userToSave);
+      alert('Operação concluída localmente.');
     } finally {
-      setUsers([...users, newUser]);
-      alert('Atleta adicionado!');
+      setEditingUser(null);
+      setIsUserModalOpen(false);
     }
   };
 
@@ -501,7 +568,6 @@ export default function App() {
     }
   };
 
-  // Helper to format startDate for the Agenda
   const formatShiftDate = (dateStr?: string) => {
     if (!dateStr) return null;
     try {
@@ -512,7 +578,6 @@ export default function App() {
     }
   };
 
-  // Logic to handle selected session for viewing
   const currentViewSession = selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId) : pastSessions[0];
 
   return (
@@ -525,20 +590,29 @@ export default function App() {
             <p className="text-padelgreen/50 text-[8px] font-bold tracking-[0.4em] uppercase mt-1">Sessões de treino</p>
           </div>
         </div>
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
             <p className="font-bold text-sm text-white">{currentUser.name}</p>
             <p className="text-[10px] text-padelgreen font-bold uppercase tracking-wider">
               {currentUser.role === Role.ADMIN ? 'Gestor' : currentUser.role === Role.COACH ? 'Coach Pro' : `Atleta`}
             </p>
           </div>
-          <button onClick={() => setCurrentUser(null)} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10"><i className="fas fa-power-off"></i></button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => { setEditingUser({ ...currentUser, id: currentUser.id }); setIsUserModalOpen(true); }} 
+              className="w-10 h-10 rounded-xl bg-petrol-light flex items-center justify-center text-padelgreen hover:bg-petrol-dark transition-all border-2 border-white/5 shadow-md"
+              title="O Meu Perfil"
+            >
+              <i className="fas fa-cog"></i>
+            </button>
+            <button onClick={() => setCurrentUser(null)} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10 shadow-md" title="Sair"><i className="fas fa-power-off"></i></button>
+          </div>
           <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-padelgreen shadow-lg" />
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Sidebar (4 columns) */}
+        {/* Sidebar */}
         <div className="lg:col-span-4 space-y-10">
           <Card title="RECOMENDAÇÕES" subtitle="AI Personal Trainer" icon={<i className="fas fa-brain"></i>}>
             <div className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 italic text-petrol font-medium text-sm leading-relaxed relative">
@@ -594,9 +668,9 @@ export default function App() {
           </Card>
         </div>
 
-        {/* Content Area (8 columns) */}
+        {/* Content Area */}
         <div className="lg:col-span-8 space-y-8">
-          {/* Tab Navigation (Visible for ADMIN to switch, others just stay on sessions) */}
+          {/* Tab Navigation */}
           <div className="flex items-center gap-6 border-b-2 border-slate-200 pb-px">
             <button 
               onClick={() => setActiveTab('sessions')}
@@ -666,7 +740,7 @@ export default function App() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                        {/* Left: Session Explorer */}
+                        {/* Session Explorer */}
                         <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
                             <div className="p-5 bg-petrol text-white">
                                 <h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4>
@@ -690,7 +764,7 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* Right: Session Viewer */}
+                        {/* Session Viewer */}
                         <div className="lg:col-span-3">
                             {currentViewSession && (
                                 <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100 animate-in fade-in duration-500">
@@ -765,7 +839,7 @@ export default function App() {
                   <h2 className="font-display font-bold text-petrol text-3xl uppercase tracking-tighter">Futuros <span className="text-padelgreen bg-petrol px-4 py-1">Campeões</span></h2>
                   <p className="text-slate-400 text-sm mt-2 font-medium">Gestão e registo de todos os atletas da academia.</p>
                 </div>
-                <Button variant="primary" onClick={() => setIsUserModalOpen(true)}>
+                <Button variant="primary" onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>
                   <i className="fas fa-user-plus mr-2"></i> ADICIONAR ATLETA
                 </Button>
               </div>
@@ -784,14 +858,25 @@ export default function App() {
                         <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500">{u.role}</span>
                       </div>
                     </div>
-                    {u.id !== currentUser.id && (
+                    
+                    <div className="absolute top-4 right-4 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                       <button 
-                        onClick={() => handleDeleteUser(u.id)} 
-                        className="absolute top-4 right-4 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2"
+                        onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} 
+                        className="text-slate-300 hover:text-petrol p-2 transition-colors"
+                        title="Editar"
                       >
-                        <i className="fas fa-trash-alt"></i>
+                        <i className="fas fa-edit"></i>
                       </button>
-                    )}
+                      {u.id !== currentUser.id && (
+                        <button 
+                          onClick={() => handleDeleteUser(u.id)} 
+                          className="text-slate-200 hover:text-red-500 transition-all p-2"
+                          title="Eliminar"
+                        >
+                          <i className="fas fa-trash-alt"></i>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -801,7 +886,13 @@ export default function App() {
       </main>
 
       <ShiftModal users={users} isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={handleCreateShift} />
-      <UserModal isOpen={isUserModalOpen} onClose={() => setIsUserModalOpen(false)} onSave={handleCreateUser} />
+      <UserModal 
+        isOpen={isUserModalOpen} 
+        editingUser={editingUser} 
+        isAdmin={currentUser.role === Role.ADMIN}
+        onClose={() => { setIsUserModalOpen(false); setEditingUser(null); }} 
+        onSave={handleSaveUser} 
+      />
     </div>
   );
 }
