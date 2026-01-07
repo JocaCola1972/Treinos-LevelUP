@@ -6,6 +6,7 @@ import { getTrainingTips, analyzeSession } from './geminiService';
 import { supabase } from './supabaseClient';
 
 const LOGO_URL = "https://static.wixstatic.com/media/893963_504622b311744837854746f09230198d~mv2.jpg";
+const SESSION_STORAGE_KEY = 'padel_levelup_session';
 
 // --- Helper Components ---
 
@@ -382,6 +383,28 @@ export default function App() {
   const [selectedHistoricalId, setSelectedHistoricalId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'sessions' | 'athletes'>('sessions');
 
+  // Load Session from LocalStorage on Mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error("Failed to restore session", e);
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    }
+  }, []);
+
+  // Save Session to LocalStorage on Change
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  }, [currentUser]);
+
   // Sync with Supabase on start
   useEffect(() => {
     const fetchData = async () => {
@@ -573,7 +596,12 @@ export default function App() {
     }
   };
 
-  if (isLoading) {
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  };
+
+  if (isLoading && !currentUser) {
     return (
       <div className="min-h-screen bg-petrol flex items-center justify-center">
         <div className="text-center">
@@ -650,7 +678,7 @@ export default function App() {
             >
               <i className="fas fa-cog"></i>
             </button>
-            <button onClick={() => setCurrentUser(null)} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10 shadow-md" title="Sair"><i className="fas fa-power-off"></i></button>
+            <button onClick={handleLogout} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10 shadow-md" title="Sair"><i className="fas fa-power-off"></i></button>
           </div>
           <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-padelgreen shadow-lg" />
         </div>
