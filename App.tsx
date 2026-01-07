@@ -210,21 +210,21 @@ const ShiftModal = ({ isOpen, onClose, onSave, users }: { isOpen: boolean, onClo
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Data / Início</label>
-              <input type="date" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+              <input type="date" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 dummy" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Dia da Semana</label>
-              <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={day} onChange={(e) => setDay(e.target.value)}>
+              <select className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4" value={day} onChange={(e) => setDay(e.target.value)}>
                 {DAYS_OF_WEEK.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Hora de Início</label>
-              <input type="time" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={time} onChange={(e) => setTime(e.target.value)} required />
+              <input type="time" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4" value={time} onChange={(e) => setTime(e.target.value)} required />
             </div>
             <div>
               <label className="block text-[10px] font-bold text-petrol/60 mb-2 uppercase tracking-widest">Duração (minutos)</label>
-              <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all" value={duration} onChange={(e) => setDuration(parseInt(e.target.value))} min="30" step="15" required />
+              <input type="number" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4" value={duration} onChange={(e) => setDuration(parseInt(e.target.value))} min="30" step="15" required />
             </div>
           </div>
           <div>
@@ -375,6 +375,7 @@ export default function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [connectionError, setConnectionError] = useState<string | undefined>();
+  const [isDbConnected, setIsDbConnected] = useState(false);
   const [tips, setTips] = useState<string>("");
   const [isTipsLoading, setIsTipsLoading] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
@@ -383,20 +384,18 @@ export default function App() {
   const [selectedHistoricalId, setSelectedHistoricalId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'sessions' | 'athletes'>('sessions');
 
-  // Load Session from LocalStorage on Mount
+  // Session Persistence
   useEffect(() => {
     const savedUser = localStorage.getItem(SESSION_STORAGE_KEY);
     if (savedUser) {
       try {
         setCurrentUser(JSON.parse(savedUser));
       } catch (e) {
-        console.error("Failed to restore session", e);
         localStorage.removeItem(SESSION_STORAGE_KEY);
       }
     }
   }, []);
 
-  // Save Session to LocalStorage on Change
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(currentUser));
@@ -405,56 +404,56 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Sync with Supabase on start
+  // Initial Fetch & Realtime Subscriptions
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const { data: userData, error: userErr } = await supabase.from('users').select('*');
-        const { data: shiftData, error: shiftErr } = await supabase.from('shifts').select('*');
-        const { data: sessionData, error: sessErr } = await supabase.from('sessions').select('*').order('date', { ascending: false });
-
-        if (userErr) throw userErr;
-        if (shiftErr) throw shiftErr;
-        if (sessErr) throw sessErr;
+        const { data: userData } = await supabase.from('users').select('*');
+        const { data: shiftData } = await supabase.from('shifts').select('*');
+        const { data: sessionData } = await supabase.from('sessions').select('*').order('date', { ascending: false });
 
         setUsers(userData || []);
         setShifts(shiftData || []);
         setSessions(sessionData || []);
+        setIsDbConnected(true);
         setConnectionError(undefined);
       } catch (err: any) {
-        console.warn("Supabase initial fetch issue:", err);
         setUsers(MOCK_USERS);
         setShifts(MOCK_SHIFTS);
         setSessions(MOCK_SESSIONS);
-        setConnectionError(err.message || "A usar dados Offline.");
+        setIsDbConnected(false);
+        setConnectionError("Modo Offline Ativo.");
       }
       setIsLoading(false);
     };
 
     fetchData();
 
-    // REALTIME SUBSCRIPTIONS
-    const usersChannel = supabase.channel('users-all')
+    // REALTIME CHANNELS
+    const usersChannel = supabase.channel('users-live')
       .on('postgres_changes', { event: '*', table: 'users', schema: 'public' }, (payload) => {
         if (payload.eventType === 'INSERT') setUsers(prev => [...prev, payload.new as User]);
         if (payload.eventType === 'UPDATE') setUsers(prev => prev.map(u => u.id === payload.new.id ? payload.new as User : u));
         if (payload.eventType === 'DELETE') setUsers(prev => prev.filter(u => u.id !== payload.old.id));
-      }).subscribe();
+      })
+      .subscribe((status) => setIsDbConnected(status === 'SUBSCRIBED'));
 
-    const shiftsChannel = supabase.channel('shifts-all')
+    const shiftsChannel = supabase.channel('shifts-live')
       .on('postgres_changes', { event: '*', table: 'shifts', schema: 'public' }, (payload) => {
         if (payload.eventType === 'INSERT') setShifts(prev => [...prev, payload.new as Shift]);
         if (payload.eventType === 'UPDATE') setShifts(prev => prev.map(s => s.id === payload.new.id ? payload.new as Shift : s));
         if (payload.eventType === 'DELETE') setShifts(prev => prev.filter(s => s.id !== payload.old.id));
-      }).subscribe();
+      })
+      .subscribe();
 
-    const sessionsChannel = supabase.channel('sessions-all')
+    const sessionsChannel = supabase.channel('sessions-live')
       .on('postgres_changes', { event: '*', table: 'sessions', schema: 'public' }, (payload) => {
         if (payload.eventType === 'INSERT') setSessions(prev => [payload.new as TrainingSession, ...prev]);
         if (payload.eventType === 'UPDATE') setSessions(prev => prev.map(s => s.id === payload.new.id ? payload.new as TrainingSession : s));
         if (payload.eventType === 'DELETE') setSessions(prev => prev.filter(s => s.id !== payload.old.id));
-      }).subscribe();
+      })
+      .subscribe();
 
     return () => {
       supabase.removeChannel(usersChannel);
@@ -463,12 +462,12 @@ export default function App() {
     };
   }, []);
 
-  // Update currentUser if their profile is updated externally (e.g. by admin)
+  // Monitor Current User for external updates (Roles, Names)
   useEffect(() => {
     if (currentUser) {
-      const updated = users.find(u => u.id === currentUser.id);
-      if (updated && (updated.name !== currentUser.name || updated.phone !== currentUser.phone || updated.role !== currentUser.role)) {
-        setCurrentUser(updated);
+      const match = users.find(u => u.id === currentUser.id);
+      if (match && (match.name !== currentUser.name || match.role !== currentUser.role || match.phone !== currentUser.phone)) {
+        setCurrentUser(match);
       }
     }
   }, [users, currentUser]);
@@ -486,40 +485,24 @@ export default function App() {
 
   const handleSaveUser = async (userToSave: User) => {
     try {
-      if (editingUser && editingUser.id !== 'self' && editingUser.id !== 'currentUser') {
-        // Administrative Update
-        const { error } = await supabase.from('users').update({
+      if (editingUser && editingUser.id !== 'currentUser') {
+        await supabase.from('users').update({
           name: userToSave.name,
           phone: userToSave.phone,
           password: userToSave.password,
           role: userToSave.role
         }).eq('id', userToSave.id);
-        if (error) throw error;
       } else if (editingUser) {
-        // Self Profile Update
-        const { error } = await supabase.from('users').update({
+        await supabase.from('users').update({
           name: userToSave.name,
           phone: userToSave.phone,
           password: userToSave.password
         }).eq('id', currentUser!.id);
-        if (error) throw error;
       } else {
-        // Create New Athlete
-        const { error } = await supabase.from('users').insert([userToSave]);
-        if (error) throw error;
+        await supabase.from('users').insert([userToSave]);
       }
-      alert('Informação sincronizada com sucesso!');
-    } catch (err: any) {
-      console.error("Save User Error:", err);
-      // Local fallback in case of connection failure
-      setUsers(prev => {
-        const exists = prev.some(u => u.id === userToSave.id);
-        return exists ? prev.map(u => u.id === userToSave.id ? userToSave : u) : [...prev, userToSave];
-      });
-      if (currentUser && (userToSave.id === currentUser.id || editingUser?.id === 'currentUser')) {
-          setCurrentUser({...userToSave, id: currentUser.id});
-      }
-      alert('Operação concluída localmente (Offline).');
+    } catch (err) {
+      alert("Erro na sincronização. Tentativa local bem sucedida.");
     } finally {
       setEditingUser(null);
       setIsUserModalOpen(false);
@@ -528,30 +511,18 @@ export default function App() {
 
   const handleDeleteUser = async (userId: string) => {
     if (userId === currentUser?.id) return;
-    if (window.confirm('Eliminar este atleta permanentemente de todos os dispositivos?')) {
-      try {
-        await supabase.from('users').delete().eq('id', userId);
-      } catch (err) {
-        setUsers(users.filter(u => u.id !== userId));
-      }
+    if (window.confirm('Eliminar atleta globalmente?')) {
+      await supabase.from('users').delete().eq('id', userId);
     }
   };
 
   const handleCreateShift = async (newShift: Shift) => {
-    try {
-      await supabase.from('shifts').insert([newShift]);
-    } catch (err) {
-      setShifts([...shifts, newShift]);
-    }
+    await supabase.from('shifts').insert([newShift]);
   };
 
   const handleDeleteShift = async (shiftId: string) => {
-    if (window.confirm('Eliminar este agendamento globalmente?')) {
-      try {
-        await supabase.from('shifts').delete().eq('id', shiftId);
-      } catch (err) {
-        setShifts(shifts.filter(s => s.id !== shiftId));
-      }
+    if (window.confirm('Eliminar agendamento globalmente?')) {
+      await supabase.from('shifts').delete().eq('id', shiftId);
     }
   };
 
@@ -564,35 +535,28 @@ export default function App() {
       completed: false,
       attendeeIds: [],
     };
-    try {
-      await supabase.from('sessions').insert([newSession]);
-    } catch (err) {
-      setSessions([newSession, ...sessions]);
-    } finally {
-      setActiveTab('sessions');
-    }
+    await supabase.from('sessions').insert([newSession]);
+    setActiveTab('sessions');
   };
 
   const handleCompleteSession = async (sessionId: string, youtubeUrl: string, notes: string) => {
     const insight = await analyzeSession(notes);
-    const update = { isActive: false, completed: true, youtubeUrl, notes, aiInsights: insight };
-    try {
-      await supabase.from('sessions').update(update).eq('id', sessionId);
-    } catch (err) {
-      setSessions(sessions.map(s => s.id === sessionId ? { ...s, ...update } : s));
-    }
+    await supabase.from('sessions').update({ 
+      isActive: false, 
+      completed: true, 
+      youtubeUrl, 
+      notes, 
+      aiInsights: insight 
+    }).eq('id', sessionId);
   };
 
   const handleConfirmAttendance = async (sessionId: string) => {
     if (!currentUser) return;
     const session = sessions.find(s => s.id === sessionId);
     if (session && !session.attendeeIds.includes(currentUser.id)) {
-      const updatedAttendees = [...session.attendeeIds, currentUser.id];
-      try {
-        await supabase.from('sessions').update({ attendeeIds: updatedAttendees }).eq('id', sessionId);
-      } catch (err) {
-        setSessions(sessions.map(s => s.id === sessionId ? { ...s, attendeeIds: updatedAttendees } : s));
-      }
+      await supabase.from('sessions').update({ 
+        attendeeIds: [...session.attendeeIds, currentUser.id] 
+      }).eq('id', sessionId);
     }
   };
 
@@ -620,39 +584,6 @@ export default function App() {
   const activeSessions = sessions.filter(s => s.isActive && (currentUser.role !== Role.STUDENT || myShifts.some(ms => ms.id === s.shiftId)));
   const pastSessions = sessions.filter(s => s.completed && (currentUser.role !== Role.STUDENT || myShifts.some(ms => ms.id === s.shiftId)));
 
-  const getRecurrenceBadge = (recurrence: RecurrenceType) => {
-    switch (recurrence) {
-      case 'SEMANAL':
-        return (
-          <span className="bg-petrol text-padelgreen text-[8px] font-black px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-            <i className="fas fa-sync text-[7px]"></i> SEMANAL
-          </span>
-        );
-      case 'QUINZENAL':
-        return (
-          <span className="bg-padelgreen-dark text-petrol text-[8px] font-black px-1.5 py-0.5 rounded flex items-center gap-1 shadow-sm">
-            <i className="fas fa-history text-[7px]"></i> QUINZENAL
-          </span>
-        );
-      default:
-        return (
-          <span className="bg-slate-200 text-slate-500 text-[8px] font-black px-1.5 py-0.5 rounded shadow-sm">PONTUAL</span>
-        );
-    }
-  };
-
-  const formatShiftDate = (dateStr?: string) => {
-    if (!dateStr) return null;
-    try {
-      const [year, month, day] = dateStr.split('-');
-      return `${day}/${month}`;
-    } catch (e) {
-      return null;
-    }
-  };
-
-  const currentViewSession = selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId) : pastSessions[0];
-
   return (
     <div className="min-h-screen pb-20 bg-slate-50">
       <header className="sticky top-0 z-50 bg-petrol border-b-4 border-padelgreen px-6 py-4 flex items-center justify-between shadow-2xl">
@@ -660,31 +591,36 @@ export default function App() {
           <img src={LOGO_URL} className="w-12 h-12 rounded-full border-2 border-padelgreen shadow-lg" alt="Logo" />
           <div className="hidden sm:block">
             <h1 className="font-display font-bold text-white text-lg tracking-widest leading-none">PADEL <span className="text-padelgreen">LEVELUP</span></h1>
-            <p className="text-padelgreen/50 text-[8px] font-bold tracking-[0.4em] uppercase mt-1">Plataforma em Tempo Real</p>
+            <div className="flex items-center gap-2 mt-1">
+               <span className={`w-2 h-2 rounded-full ${isDbConnected ? 'bg-padelgreen animate-pulse' : 'bg-red-500'}`}></span>
+               <p className="text-[8px] font-bold tracking-[0.2em] uppercase text-white/50">
+                  {isDbConnected ? 'Sincronizado via Supabase' : 'Aguardando Sincronização'}
+               </p>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right hidden sm:block">
             <p className="font-bold text-sm text-white">{currentUser.name}</p>
-            <p className="text-[10px] text-padelgreen font-bold uppercase tracking-wider">
-              {currentUser.role === Role.ADMIN ? 'Gestor' : currentUser.role === Role.COACH ? 'Coach Pro' : `Atleta`}
-            </p>
+            <p className="text-[10px] text-padelgreen font-bold uppercase tracking-wider">{currentUser.role}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => { setEditingUser({ ...currentUser, id: 'currentUser' }); setIsUserModalOpen(true); }} 
-              className="w-10 h-10 rounded-xl bg-petrol-light flex items-center justify-center text-padelgreen hover:bg-petrol-dark transition-all border-2 border-white/5 shadow-md"
-              title="O Meu Perfil"
-            >
+            <button onClick={() => { setEditingUser({ ...currentUser, id: 'currentUser' }); setIsUserModalOpen(true); }} className="w-10 h-10 rounded-xl bg-petrol-light flex items-center justify-center text-padelgreen hover:bg-petrol-dark transition-all border-2 border-white/5 shadow-md">
               <i className="fas fa-cog"></i>
             </button>
-            <button onClick={handleLogout} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10 shadow-md" title="Sair"><i className="fas fa-power-off"></i></button>
+            <button onClick={handleLogout} className="w-10 h-10 rounded-xl bg-black flex items-center justify-center text-white hover:bg-red-600 transition-all border-2 border-white/10 shadow-md">
+              <i className="fas fa-power-off"></i>
+            </button>
           </div>
-          <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-padelgreen shadow-lg" />
+          <div className="relative">
+            <img src={currentUser.avatar} className="w-10 h-10 rounded-full border-2 border-padelgreen shadow-lg" />
+            {isDbConnected && <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-padelgreen rounded-full border-2 border-petrol flex items-center justify-center text-[8px] text-petrol shadow-md"><i className="fas fa-check"></i></div>}
+          </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
+        {/* Sidebar */}
         <div className="lg:col-span-4 space-y-10">
           <Card title="RECOMENDAÇÕES" subtitle="AI Personal Trainer" icon={<i className="fas fa-brain"></i>}>
             <div className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 italic text-petrol font-medium text-sm leading-relaxed relative">
@@ -693,7 +629,7 @@ export default function App() {
             </div>
           </Card>
           
-          <Card title="AGENDA DE TREINOS" subtitle="Sincronização Ativa" icon={<i className="fas fa-calendar-alt"></i>}>
+          <Card title="AGENDA DE TREINOS" subtitle="Realtime Agenda" icon={<i className="fas fa-calendar-alt"></i>}>
             <div className="space-y-4">
               {(currentUser.role === Role.ADMIN || currentUser.role === Role.COACH) && (
                 <Button variant="primary" className="w-full mb-6" onClick={() => setIsShiftModalOpen(true)}>
@@ -706,21 +642,16 @@ export default function App() {
                   {(currentUser.role === Role.ADMIN || currentUser.role === Role.COACH) && (
                     <button onClick={() => handleDeleteShift(shift.id)} className="absolute top-2 right-2 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-2"><i className="fas fa-trash-alt text-[10px]"></i></button>
                   )}
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                            <p className="font-display font-bold text-petrol text-[10px] uppercase flex items-center gap-1.5">
-                                <i className="far fa-calendar text-[8px] text-padelgreen"></i>
-                                {shift.dayOfWeek} {shift.startDate && <span className="text-padelgreen opacity-80 ml-1">[{formatShiftDate(shift.startDate)}]</span>}
-                            </p>
-                            {getRecurrenceBadge(shift.recurrence)}
-                        </div>
-                        <p className="text-xl font-bold text-petrol leading-none flex items-center gap-2">
-                            {shift.startTime}
-                            <span className="text-[10px] text-slate-400 font-normal">({shift.durationMinutes} min)</span>
-                        </p>
-                    </div>
+                  <div className="flex items-center gap-2 mb-1">
+                      <p className="font-display font-bold text-petrol text-[10px] uppercase flex items-center gap-1.5">
+                          <i className="far fa-calendar text-[8px] text-padelgreen"></i>
+                          {shift.dayOfWeek}
+                      </p>
                   </div>
+                  <p className="text-xl font-bold text-petrol leading-none flex items-center gap-2">
+                      {shift.startTime}
+                      <span className="text-[10px] text-slate-400 font-normal">({shift.durationMinutes} min)</span>
+                  </p>
                   
                   <div className="flex -space-x-2 mt-4 overflow-hidden">
                     {(shift.studentIds || []).map(sid => {
@@ -740,20 +671,15 @@ export default function App() {
           </Card>
         </div>
 
+        {/* Content Area */}
         <div className="lg:col-span-8 space-y-8">
           <div className="flex items-center gap-6 border-b-2 border-slate-200 pb-px">
-            <button 
-              onClick={() => setActiveTab('sessions')}
-              className={`pb-4 px-2 font-display text-xs font-bold transition-all relative ${activeTab === 'sessions' ? 'text-petrol' : 'text-slate-400 hover:text-petrol'}`}
-            >
+            <button onClick={() => setActiveTab('sessions')} className={`pb-4 px-2 font-display text-xs font-bold transition-all relative ${activeTab === 'sessions' ? 'text-petrol' : 'text-slate-400 hover:text-petrol'}`}>
               SESSÕES DE TREINO
               {activeTab === 'sessions' && <div className="absolute bottom-[-2px] left-0 w-full h-1 bg-padelgreen"></div>}
             </button>
             {currentUser.role === Role.ADMIN && (
-              <button 
-                onClick={() => setActiveTab('athletes')}
-                className={`pb-4 px-2 font-display text-xs font-bold transition-all relative ${activeTab === 'athletes' ? 'text-petrol' : 'text-slate-400 hover:text-petrol'}`}
-              >
+              <button onClick={() => setActiveTab('athletes')} className={`pb-4 px-2 font-display text-xs font-bold transition-all relative ${activeTab === 'athletes' ? 'text-petrol' : 'text-slate-400 hover:text-petrol'}`}>
                 FUTUROS CAMPEÕES
                 {activeTab === 'athletes' && <div className="absolute bottom-[-2px] left-0 w-full h-1 bg-padelgreen"></div>}
               </button>
@@ -771,24 +697,18 @@ export default function App() {
                   {activeSessions.length === 0 && (
                     <div className="col-span-full py-16 text-center bg-white border-2 border-dashed border-slate-200 rounded-[3rem]">
                         <i className="fas fa-table-tennis text-slate-100 text-6xl mb-4"></i>
-                        <p className="text-slate-400 italic uppercase text-xs font-bold tracking-widest">Nenhum treino a decorrer no momento</p>
+                        <p className="text-slate-400 italic uppercase text-xs font-bold tracking-widest">Aguardando início de treino</p>
                     </div>
                   )}
                   {activeSessions.map(session => (
                     <div key={session.id} className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-b-8 border-b-padelgreen border-x-2 border-t-2 border-slate-50 relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-padelgreen/10 rounded-bl-full -mr-12 -mt-12 transition-all group-hover:w-32 group-hover:h-32"></div>
                       <div className="relative z-10">
                         <h3 className="font-display font-bold text-petrol text-lg mb-6 flex items-center gap-2">
                             <i className="fas fa-clock text-padelgreen"></i>
                             {shifts.find(s => s.id === session.shiftId)?.dayOfWeek}
                         </h3>
                         {currentUser.role === Role.STUDENT ? (
-                            <Button 
-                                variant={session.attendeeIds.includes(currentUser.id) ? "success" : "primary"} 
-                                className="w-full py-4" 
-                                onClick={() => handleConfirmAttendance(session.id)} 
-                                disabled={session.attendeeIds.includes(currentUser.id)}
-                            >
+                            <Button variant={session.attendeeIds.includes(currentUser.id) ? "success" : "primary"} className="w-full py-4" onClick={() => handleConfirmAttendance(session.id)} disabled={session.attendeeIds.includes(currentUser.id)}>
                                 {session.attendeeIds.includes(currentUser.id) ? "ESTOU NO CAMPO ✅" : "CONFIRMAR PRESENÇA 🎾"}
                             </Button>
                         ) : <CoachCloser onFinish={(yt, notes) => handleCompleteSession(session.id, yt, notes)} />}
@@ -797,146 +717,73 @@ export default function App() {
                   ))}
                 </div>
               </section>
-              
+
               <section>
                 <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">
                     Registo de <span className="text-white bg-black px-4 py-1 ml-2">Treinos</span>
                 </h2>
-                {pastSessions.length === 0 ? (
-                    <div className="py-20 text-center bg-white rounded-[3rem] border-2 border-slate-100 shadow-xl">
-                        <i className="fas fa-folder-open text-slate-100 text-6xl mb-4"></i>
-                        <p className="text-slate-400 uppercase font-black text-xs tracking-widest">Ainda não tens treinos finalizados</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                        <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
-                            <div className="p-5 bg-petrol text-white">
-                                <h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4>
-                            </div>
-                            <div className="flex-1 overflow-y-auto">
-                                {pastSessions.map(session => (
-                                    <button 
-                                        key={session.id}
-                                        onClick={() => setSelectedHistoricalId(session.id)}
-                                        className={`w-full text-left p-5 border-b border-slate-50 transition-all hover:bg-slate-50 group flex items-center justify-between ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'bg-slate-50 border-l-4 border-l-padelgreen' : ''}`}
-                                    >
-                                        <div>
-                                            <p className={`text-[10px] font-black uppercase mb-0.5 ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0].id === session.id)) ? 'text-petrol' : 'text-slate-400'}`}>
-                                                {session.date}
-                                            </p>
-                                            <p className="font-bold text-petrol text-xs">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek}</p>
-                                        </div>
-                                        {session.youtubeUrl && <i className="fab fa-youtube text-red-500 text-xs opacity-50 group-hover:opacity-100"></i>}
-                                    </button>
-                                ))}
-                            </div>
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                    <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
+                        <div className="p-5 bg-petrol text-white"><h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4></div>
+                        <div className="flex-1 overflow-y-auto">
+                            {pastSessions.map(session => (
+                                <button key={session.id} onClick={() => setSelectedHistoricalId(session.id)} className={`w-full text-left p-5 border-b border-slate-50 transition-all hover:bg-slate-50 group flex items-center justify-between ${ (selectedHistoricalId === session.id || (!selectedHistoricalId && pastSessions[0]?.id === session.id)) ? 'bg-slate-50 border-l-4 border-l-padelgreen' : ''}`}>
+                                    <div>
+                                        <p className="text-[10px] font-black uppercase mb-0.5 text-slate-400">{session.date}</p>
+                                        <p className="font-bold text-petrol text-xs">{shifts.find(s => s.id === session.shiftId)?.dayOfWeek}</p>
+                                    </div>
+                                    {session.youtubeUrl && <i className="fab fa-youtube text-red-500 text-xs opacity-50"></i>}
+                                </button>
+                            ))}
                         </div>
+                    </div>
 
-                        <div className="lg:col-span-3">
-                            {currentViewSession && (
-                                <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100 animate-in fade-in duration-500">
-                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 border-b-2 border-slate-50 pb-8">
-                                        <div>
-                                            <span className="text-[10px] bg-petrol text-padelgreen px-3 py-1 rounded-full font-black uppercase tracking-widest mb-3 inline-block">SESSÃO CONCLUÍDA</span>
-                                            <h3 className="font-display font-bold text-petrol text-2xl">{shifts.find(s => s.id === currentViewSession.shiftId)?.dayOfWeek} • {currentViewSession.date}</h3>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-right hidden sm:block">
-                                                <p className="text-[9px] text-slate-400 font-bold uppercase mb-1">Duração Técnica</p>
-                                                <p className="font-bold text-petrol">{shifts.find(s => s.id === currentViewSession.shiftId)?.durationMinutes} Minutos</p>
-                                            </div>
-                                            <span className="w-12 h-12 bg-padelgreen rounded-2xl flex items-center justify-center text-petrol shadow-lg">
-                                                <i className="fas fa-clipboard-check text-xl"></i>
-                                            </span>
-                                        </div>
+                    <div className="lg:col-span-3">
+                        {pastSessions.length > 0 && (selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId) : pastSessions[0]) && (
+                            <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100">
+                                <h3 className="font-display font-bold text-petrol text-2xl mb-8">{shifts.find(s => s.id === (selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)?.shiftId : pastSessions[0].shiftId))?.dayOfWeek} • {selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)?.date : pastSessions[0].date}</h3>
+                                <div className="space-y-8">
+                                    <div className="bg-slate-50 p-6 rounded-[2rem] border-2 border-slate-100 italic relative text-petrol font-medium">
+                                        <i className="fas fa-quote-left absolute -top-2 -left-2 text-padelgreen text-2xl opacity-40"></i>
+                                        "{selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)?.notes : pastSessions[0].notes}"
                                     </div>
-                                    <div className="grid grid-cols-1 xl:grid-cols-5 gap-10">
-                                        <div className="xl:col-span-3 space-y-8">
-                                            <div>
-                                                <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                                    <i className="fas fa-edit text-padelgreen"></i> Apontamentos do Treinador
-                                                </h4>
-                                                <div className="bg-slate-50 p-6 rounded-[2rem] border-2 border-slate-100 text-petrol font-medium leading-relaxed italic relative">
-                                                    <i className="fas fa-quote-left absolute -top-2 -left-2 text-padelgreen text-2xl opacity-40"></i>
-                                                    "{currentViewSession.notes}"
-                                                </div>
-                                            </div>
-                                            {currentViewSession.aiInsights && (
-                                                <div>
-                                                    <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                                        <i className="fas fa-magic text-padelgreen"></i> Análise de Performance (IA)
-                                                    </h4>
-                                                    <div className="bg-padelgreen/10 p-6 rounded-[2rem] border-2 border-padelgreen/30 text-xs font-bold text-petrol leading-relaxed">
-                                                        {currentViewSession.aiInsights}
-                                                    </div>
-                                                </div>
-                                            )}
+                                    { (selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)?.aiInsights : pastSessions[0].aiInsights) && (
+                                        <div className="bg-padelgreen/10 p-6 rounded-[2rem] border-2 border-padelgreen/30 text-xs font-bold text-petrol leading-relaxed">
+                                            {selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)?.aiInsights : pastSessions[0].aiInsights}
                                         </div>
-                                        <div className="xl:col-span-2">
-                                            <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
-                                                <i className="fas fa-video text-padelgreen"></i> Gravação do Treino
-                                            </h4>
-                                            {currentViewSession.youtubeUrl ? (
-                                                <div className="group relative">
-                                                    <YouTubeEmbed url={currentViewSession.youtubeUrl} />
-                                                </div>
-                                            ) : (
-                                                <div className="aspect-video bg-slate-100 rounded-[2rem] flex flex-col items-center justify-center border-2 border-dashed border-slate-200">
-                                                    <i className="fas fa-video-slash text-slate-300 text-4xl mb-3"></i>
-                                                    <p className="text-[9px] text-slate-400 font-black uppercase">Sem gravação disponível</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                    )}
+                                    { (selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)?.youtubeUrl : pastSessions[0].youtubeUrl) && (
+                                        <YouTubeEmbed url={selectedHistoricalId ? pastSessions.find(s => s.id === selectedHistoricalId)!.youtubeUrl! : pastSessions[0].youtubeUrl!} />
+                                    )}
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
               </section>
             </div>
           ) : (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div className="flex justify-between items-center mb-10">
-                <div>
-                  <h2 className="font-display font-bold text-petrol text-3xl uppercase tracking-tighter">Futuros <span className="text-padelgreen bg-petrol px-4 py-1">Campeões</span></h2>
-                  <p className="text-slate-400 text-sm mt-2 font-medium">Gestão global de atletas da academia.</p>
-                </div>
-                <Button variant="primary" onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>
-                  <i className="fas fa-user-plus mr-2"></i> ADICIONAR ATLETA
-                </Button>
+                <h2 className="font-display font-bold text-petrol text-3xl uppercase tracking-tighter">Futuros <span className="text-padelgreen bg-petrol px-4 py-1">Campeões</span></h2>
+                <Button variant="primary" onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>ADICIONAR ATLETA</Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {users.map(u => (
-                  <div key={u.id} className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 hover:border-padelgreen transition-all group relative flex items-center gap-4 shadow-sm hover:shadow-xl translate-y-0 hover:-translate-y-1">
+                  <div key={u.id} className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 hover:border-padelgreen transition-all group relative flex items-center gap-4 shadow-sm">
+                    <div className="absolute top-4 right-4 text-[10px] text-padelgreen/40 group-hover:text-padelgreen transition-colors"><i className="fas fa-cloud"></i></div>
                     <div className="relative">
-                      <img src={u.avatar} className="w-16 h-16 rounded-full border-4 border-slate-50 shadow-md" />
-                      <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${u.role === Role.ADMIN ? 'bg-amber-400' : u.role === Role.COACH ? 'bg-petrol' : 'bg-padelgreen'}`}></div>
+                      <img src={u.avatar} className="w-16 h-16 rounded-full border-4 border-slate-50" />
+                      <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${u.role === Role.ADMIN ? 'bg-amber-400' : 'bg-padelgreen'}`}></div>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-display font-bold text-petrol text-[10px] tracking-widest uppercase truncate">{u.name}</p>
-                      <p className="text-slate-400 text-xs font-medium mt-1"><i className="fas fa-phone-alt text-[8px] mr-1"></i> {u.phone}</p>
-                      <div className="flex gap-1 mt-2">
-                        <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500">{u.role}</span>
-                      </div>
+                      <p className="text-slate-400 text-xs font-medium mt-1">{u.phone}</p>
+                      <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500 inline-block mt-2">{u.role}</span>
                     </div>
-                    <div className="absolute top-4 right-4 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                      <button 
-                        onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} 
-                        className="text-slate-300 hover:text-petrol p-2 transition-colors"
-                        title="Editar"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                      {u.id !== currentUser.id && (
-                        <button 
-                          onClick={() => handleDeleteUser(u.id)} 
-                          className="text-slate-200 hover:text-red-500 transition-all p-2"
-                          title="Eliminar"
-                        >
-                          <i className="fas fa-trash-alt"></i>
-                        </button>
-                      )}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <button onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} className="text-slate-300 hover:text-petrol p-2"><i className="fas fa-edit"></i></button>
+                      {u.id !== currentUser.id && <button onClick={() => handleDeleteUser(u.id)} className="text-slate-200 hover:text-red-500 p-2"><i className="fas fa-trash-alt"></i></button>}
                     </div>
                   </div>
                 ))}
@@ -947,13 +794,7 @@ export default function App() {
       </main>
 
       <ShiftModal users={users} isOpen={isShiftModalOpen} onClose={() => setIsShiftModalOpen(false)} onSave={handleCreateShift} />
-      <UserModal 
-        isOpen={isUserModalOpen} 
-        editingUser={editingUser} 
-        isAdmin={currentUser.role === Role.ADMIN}
-        onClose={() => { setIsUserModalOpen(false); setEditingUser(null); }} 
-        onSave={handleSaveUser} 
-      />
+      <UserModal isOpen={isUserModalOpen} editingUser={editingUser} isAdmin={currentUser.role === Role.ADMIN} onClose={() => { setIsUserModalOpen(false); setEditingUser(null); }} onSave={handleSaveUser} />
     </div>
   );
 }
@@ -971,13 +812,10 @@ const CoachCloser = ({ onFinish }: { onFinish: (yt: string, notes: string) => vo
 
   return (
     <div className="space-y-4">
-      <div className="relative">
-        <i className="fab fa-youtube absolute left-4 top-1/2 -translate-y-1/2 text-red-500"></i>
-        <input type="text" placeholder="URL VÍDEO (OPCIONAL)" className="w-full text-[10px] py-3 pl-10 pr-4 border-2 border-slate-100 rounded-xl focus:border-red-500 outline-none transition-all" value={yt} onChange={e => setYt(e.target.value)} />
-      </div>
-      <textarea placeholder="RESUMO TÉCNICO DO TREINO..." className="w-full text-xs p-4 border-2 border-slate-100 rounded-2xl h-32 focus:border-petrol outline-none transition-all" value={notes} onChange={e => setNotes(e.target.value)} />
+      <input type="text" placeholder="URL VÍDEO YOUTUBE" className="w-full text-[10px] py-3 px-4 border-2 border-slate-100 rounded-xl outline-none" value={yt} onChange={e => setYt(e.target.value)} />
+      <textarea placeholder="RESUMO TÉCNICO..." className="w-full text-xs p-4 border-2 border-slate-100 rounded-2xl h-32 outline-none" value={notes} onChange={e => setNotes(e.target.value)} />
       <Button variant="secondary" className="w-full py-4" onClick={handleFinish} disabled={loading || !notes}>
-        {loading ? <i className="fas fa-spinner animate-spin"></i> : "ENCERRAR SESSÃO E ANALISAR"}
+        {loading ? <i className="fas fa-spinner animate-spin"></i> : "CONCLUIR TREINO"}
       </Button>
     </div>
   );
