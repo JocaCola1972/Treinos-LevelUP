@@ -71,6 +71,7 @@ const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role>(Role.STUDENT);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (editingUser) {
@@ -88,9 +89,10 @@ const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: 
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
+    setIsSaving(true);
+    await onSave({
       id: editingUser?.id || `u-${Date.now()}`,
       name,
       phone,
@@ -98,6 +100,7 @@ const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: 
       role: role,
       avatar: editingUser?.avatar || `https://i.pravatar.cc/150?u=${phone}`
     });
+    setIsSaving(false);
     onClose();
   };
 
@@ -106,7 +109,7 @@ const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: 
       <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl border-4 border-padelgreen animate-in fade-in zoom-in duration-300">
         <div className="flex justify-between items-center mb-6">
           <h3 className="font-display font-bold text-petrol tracking-tight">
-            {editingUser ? (editingUser.id === 'self' ? 'O MEU PERFIL' : 'EDITAR ATLETA') : 'NOVO ATLETA'}
+            {editingUser ? (editingUser.id === 'self' || editingUser.id === 'currentUser' ? 'O MEU PERFIL' : 'EDITAR ATLETA') : 'NOVO ATLETA'}
           </h3>
           <button onClick={onClose} className="text-slate-400 hover:text-petrol transition-colors">
             <i className="fas fa-times text-2xl"></i>
@@ -126,7 +129,7 @@ const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: 
               <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Password de Acesso</label>
               <input type="password" placeholder="Mínimo 4 caracteres" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-3 px-4 outline-none focus:border-padelgreen transition-all font-bold text-petrol" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
-            {isAdmin && (
+            {isAdmin && editingUser?.id !== 'currentUser' && (
               <div>
                 <label className="block text-[10px] font-bold text-petrol/60 mb-1 uppercase tracking-widest">Cargo / Role</label>
                 <select 
@@ -142,8 +145,10 @@ const UserModal = ({ isOpen, onClose, onSave, editingUser, isAdmin }: { isOpen: 
             )}
           </div>
           <div className="flex gap-4 pt-4">
-            <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" className="flex-1">{editingUser ? 'Guardar' : 'Adicionar'}</Button>
+            <Button variant="outline" className="flex-1" onClick={onClose} disabled={isSaving}>Cancelar</Button>
+            <Button type="submit" className="flex-1" disabled={isSaving}>
+              {isSaving ? <i className="fas fa-spinner animate-spin"></i> : (editingUser ? 'Guardar' : 'Adicionar')}
+            </Button>
           </div>
         </form>
       </div>
@@ -395,16 +400,55 @@ export default function App() {
         setSessions(sessionData || []);
         setConnectionError(undefined);
       } catch (err: any) {
-        console.warn("Supabase connection issue:", err);
+        console.warn("Supabase initial fetch issue:", err);
         setUsers(MOCK_USERS);
         setShifts(MOCK_SHIFTS);
         setSessions(MOCK_SESSIONS);
-        setConnectionError(err.message || "Erro desconhecido. A usar dados Offline.");
+        setConnectionError(err.message || "A usar dados Offline.");
       }
       setIsLoading(false);
     };
+
     fetchData();
+
+    // REALTIME SUBSCRIPTIONS
+    const usersChannel = supabase.channel('users-all')
+      .on('postgres_changes', { event: '*', table: 'users', schema: 'public' }, (payload) => {
+        if (payload.eventType === 'INSERT') setUsers(prev => [...prev, payload.new as User]);
+        if (payload.eventType === 'UPDATE') setUsers(prev => prev.map(u => u.id === payload.new.id ? payload.new as User : u));
+        if (payload.eventType === 'DELETE') setUsers(prev => prev.filter(u => u.id !== payload.old.id));
+      }).subscribe();
+
+    const shiftsChannel = supabase.channel('shifts-all')
+      .on('postgres_changes', { event: '*', table: 'shifts', schema: 'public' }, (payload) => {
+        if (payload.eventType === 'INSERT') setShifts(prev => [...prev, payload.new as Shift]);
+        if (payload.eventType === 'UPDATE') setShifts(prev => prev.map(s => s.id === payload.new.id ? payload.new as Shift : s));
+        if (payload.eventType === 'DELETE') setShifts(prev => prev.filter(s => s.id !== payload.old.id));
+      }).subscribe();
+
+    const sessionsChannel = supabase.channel('sessions-all')
+      .on('postgres_changes', { event: '*', table: 'sessions', schema: 'public' }, (payload) => {
+        if (payload.eventType === 'INSERT') setSessions(prev => [payload.new as TrainingSession, ...prev]);
+        if (payload.eventType === 'UPDATE') setSessions(prev => prev.map(s => s.id === payload.new.id ? payload.new as TrainingSession : s));
+        if (payload.eventType === 'DELETE') setSessions(prev => prev.filter(s => s.id !== payload.old.id));
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(usersChannel);
+      supabase.removeChannel(shiftsChannel);
+      supabase.removeChannel(sessionsChannel);
+    };
   }, []);
+
+  // Update currentUser if their profile is updated externally (e.g. by admin)
+  useEffect(() => {
+    if (currentUser) {
+      const updated = users.find(u => u.id === currentUser.id);
+      if (updated && (updated.name !== currentUser.name || updated.phone !== currentUser.phone || updated.role !== currentUser.role)) {
+        setCurrentUser(updated);
+      }
+    }
+  }, [users, currentUser]);
 
   useEffect(() => {
     if (currentUser) fetchInitialTips();
@@ -419,38 +463,40 @@ export default function App() {
 
   const handleSaveUser = async (userToSave: User) => {
     try {
-      if (editingUser) {
-        // Update
+      if (editingUser && editingUser.id !== 'self' && editingUser.id !== 'currentUser') {
+        // Administrative Update
         const { error } = await supabase.from('users').update({
           name: userToSave.name,
           phone: userToSave.phone,
           password: userToSave.password,
           role: userToSave.role
         }).eq('id', userToSave.id);
-        
         if (error) throw error;
-        
-        setUsers(users.map(u => u.id === userToSave.id ? userToSave : u));
-        
-        // If it's the current user, update the state
-        if (currentUser && currentUser.id === userToSave.id) {
-          setCurrentUser(userToSave);
-        }
-        
-        alert('Dados atualizados com sucesso!');
+      } else if (editingUser) {
+        // Self Profile Update
+        const { error } = await supabase.from('users').update({
+          name: userToSave.name,
+          phone: userToSave.phone,
+          password: userToSave.password
+        }).eq('id', currentUser!.id);
+        if (error) throw error;
       } else {
-        // Create
+        // Create New Athlete
         const { error } = await supabase.from('users').insert([userToSave]);
         if (error) throw error;
-        setUsers([...users, userToSave]);
-        alert('Atleta adicionado!');
       }
+      alert('Informação sincronizada com sucesso!');
     } catch (err: any) {
       console.error("Save User Error:", err);
-      // Fallback local
-      setUsers(users.some(u => u.id === userToSave.id) ? users.map(u => u.id === userToSave.id ? userToSave : u) : [...users, userToSave]);
-      if (currentUser && currentUser.id === userToSave.id) setCurrentUser(userToSave);
-      alert('Operação concluída localmente.');
+      // Local fallback in case of connection failure
+      setUsers(prev => {
+        const exists = prev.some(u => u.id === userToSave.id);
+        return exists ? prev.map(u => u.id === userToSave.id ? userToSave : u) : [...prev, userToSave];
+      });
+      if (currentUser && (userToSave.id === currentUser.id || editingUser?.id === 'currentUser')) {
+          setCurrentUser({...userToSave, id: currentUser.id});
+      }
+      alert('Operação concluída localmente (Offline).');
     } finally {
       setEditingUser(null);
       setIsUserModalOpen(false);
@@ -459,12 +505,11 @@ export default function App() {
 
   const handleDeleteUser = async (userId: string) => {
     if (userId === currentUser?.id) return;
-    if (window.confirm('Eliminar este atleta permanentemente?')) {
+    if (window.confirm('Eliminar este atleta permanentemente de todos os dispositivos?')) {
       try {
         await supabase.from('users').delete().eq('id', userId);
-      } finally {
+      } catch (err) {
         setUsers(users.filter(u => u.id !== userId));
-        setShifts(shifts.map(s => ({ ...s, studentIds: (s.studentIds || []).filter(sid => sid !== userId) })));
       }
     }
   };
@@ -472,17 +517,16 @@ export default function App() {
   const handleCreateShift = async (newShift: Shift) => {
     try {
       await supabase.from('shifts').insert([newShift]);
-    } finally {
+    } catch (err) {
       setShifts([...shifts, newShift]);
-      alert('Treino agendado com sucesso!');
     }
   };
 
   const handleDeleteShift = async (shiftId: string) => {
-    if (window.confirm('Eliminar este agendamento?')) {
+    if (window.confirm('Eliminar este agendamento globalmente?')) {
       try {
         await supabase.from('shifts').delete().eq('id', shiftId);
-      } finally {
+      } catch (err) {
         setShifts(shifts.filter(s => s.id !== shiftId));
       }
     }
@@ -499,8 +543,9 @@ export default function App() {
     };
     try {
       await supabase.from('sessions').insert([newSession]);
-    } finally {
+    } catch (err) {
       setSessions([newSession, ...sessions]);
+    } finally {
       setActiveTab('sessions');
     }
   };
@@ -510,7 +555,7 @@ export default function App() {
     const update = { isActive: false, completed: true, youtubeUrl, notes, aiInsights: insight };
     try {
       await supabase.from('sessions').update(update).eq('id', sessionId);
-    } finally {
+    } catch (err) {
       setSessions(sessions.map(s => s.id === sessionId ? { ...s, ...update } : s));
     }
   };
@@ -522,7 +567,7 @@ export default function App() {
       const updatedAttendees = [...session.attendeeIds, currentUser.id];
       try {
         await supabase.from('sessions').update({ attendeeIds: updatedAttendees }).eq('id', sessionId);
-      } finally {
+      } catch (err) {
         setSessions(sessions.map(s => s.id === sessionId ? { ...s, attendeeIds: updatedAttendees } : s));
       }
     }
@@ -533,7 +578,7 @@ export default function App() {
       <div className="min-h-screen bg-petrol flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-padelgreen border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="font-display text-white text-[10px] tracking-widest uppercase opacity-50">Sincronizando Court...</p>
+          <p className="font-display text-white text-[10px] tracking-widest uppercase opacity-50">Sincronizando Plataforma...</p>
         </div>
       </div>
     );
@@ -587,7 +632,7 @@ export default function App() {
           <img src={LOGO_URL} className="w-12 h-12 rounded-full border-2 border-padelgreen shadow-lg" alt="Logo" />
           <div className="hidden sm:block">
             <h1 className="font-display font-bold text-white text-lg tracking-widest leading-none">PADEL <span className="text-padelgreen">LEVELUP</span></h1>
-            <p className="text-padelgreen/50 text-[8px] font-bold tracking-[0.4em] uppercase mt-1">Sessões de treino</p>
+            <p className="text-padelgreen/50 text-[8px] font-bold tracking-[0.4em] uppercase mt-1">Plataforma em Tempo Real</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -599,7 +644,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <button 
-              onClick={() => { setEditingUser({ ...currentUser, id: currentUser.id }); setIsUserModalOpen(true); }} 
+              onClick={() => { setEditingUser({ ...currentUser, id: 'currentUser' }); setIsUserModalOpen(true); }} 
               className="w-10 h-10 rounded-xl bg-petrol-light flex items-center justify-center text-padelgreen hover:bg-petrol-dark transition-all border-2 border-white/5 shadow-md"
               title="O Meu Perfil"
             >
@@ -612,7 +657,6 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-10 grid grid-cols-1 lg:grid-cols-12 gap-10">
-        {/* Sidebar */}
         <div className="lg:col-span-4 space-y-10">
           <Card title="RECOMENDAÇÕES" subtitle="AI Personal Trainer" icon={<i className="fas fa-brain"></i>}>
             <div className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 italic text-petrol font-medium text-sm leading-relaxed relative">
@@ -621,7 +665,7 @@ export default function App() {
             </div>
           </Card>
           
-          <Card title="AGENDA DE TREINOS" subtitle="Gestão de Horários" icon={<i className="fas fa-calendar-alt"></i>}>
+          <Card title="AGENDA DE TREINOS" subtitle="Sincronização Ativa" icon={<i className="fas fa-calendar-alt"></i>}>
             <div className="space-y-4">
               {(currentUser.role === Role.ADMIN || currentUser.role === Role.COACH) && (
                 <Button variant="primary" className="w-full mb-6" onClick={() => setIsShiftModalOpen(true)}>
@@ -668,9 +712,7 @@ export default function App() {
           </Card>
         </div>
 
-        {/* Content Area */}
         <div className="lg:col-span-8 space-y-8">
-          {/* Tab Navigation */}
           <div className="flex items-center gap-6 border-b-2 border-slate-200 pb-px">
             <button 
               onClick={() => setActiveTab('sessions')}
@@ -732,7 +774,6 @@ export default function App() {
                 <h2 className="font-display font-bold text-petrol text-2xl mb-8 border-b-4 border-petrol pb-4 uppercase">
                     Registo de <span className="text-white bg-black px-4 py-1 ml-2">Treinos</span>
                 </h2>
-                
                 {pastSessions.length === 0 ? (
                     <div className="py-20 text-center bg-white rounded-[3rem] border-2 border-slate-100 shadow-xl">
                         <i className="fas fa-folder-open text-slate-100 text-6xl mb-4"></i>
@@ -740,7 +781,6 @@ export default function App() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                        {/* Session Explorer */}
                         <div className="lg:col-span-1 bg-white rounded-[2rem] border-2 border-slate-100 shadow-lg overflow-hidden max-h-[600px] flex flex-col">
                             <div className="p-5 bg-petrol text-white">
                                 <h4 className="font-display text-[10px] font-bold tracking-widest">HISTÓRICO</h4>
@@ -764,7 +804,6 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* Session Viewer */}
                         <div className="lg:col-span-3">
                             {currentViewSession && (
                                 <div className="bg-white p-8 md:p-12 rounded-[3rem] shadow-2xl border-2 border-slate-100 animate-in fade-in duration-500">
@@ -783,7 +822,6 @@ export default function App() {
                                             </span>
                                         </div>
                                     </div>
-
                                     <div className="grid grid-cols-1 xl:grid-cols-5 gap-10">
                                         <div className="xl:col-span-3 space-y-8">
                                             <div>
@@ -795,7 +833,6 @@ export default function App() {
                                                     "{currentViewSession.notes}"
                                                 </div>
                                             </div>
-
                                             {currentViewSession.aiInsights && (
                                                 <div>
                                                     <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
@@ -807,7 +844,6 @@ export default function App() {
                                                 </div>
                                             )}
                                         </div>
-
                                         <div className="xl:col-span-2">
                                             <h4 className="text-[10px] font-black text-petrol uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
                                                 <i className="fas fa-video text-padelgreen"></i> Gravação do Treino
@@ -815,7 +851,6 @@ export default function App() {
                                             {currentViewSession.youtubeUrl ? (
                                                 <div className="group relative">
                                                     <YouTubeEmbed url={currentViewSession.youtubeUrl} />
-                                                    <p className="mt-4 text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center">VideoID: {currentViewSession.youtubeUrl.split('v=')[1]?.substring(0,11)}</p>
                                                 </div>
                                             ) : (
                                                 <div className="aspect-video bg-slate-100 rounded-[2rem] flex flex-col items-center justify-center border-2 border-dashed border-slate-200">
@@ -837,13 +872,12 @@ export default function App() {
               <div className="flex justify-between items-center mb-10">
                 <div>
                   <h2 className="font-display font-bold text-petrol text-3xl uppercase tracking-tighter">Futuros <span className="text-padelgreen bg-petrol px-4 py-1">Campeões</span></h2>
-                  <p className="text-slate-400 text-sm mt-2 font-medium">Gestão e registo de todos os atletas da academia.</p>
+                  <p className="text-slate-400 text-sm mt-2 font-medium">Gestão global de atletas da academia.</p>
                 </div>
                 <Button variant="primary" onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>
                   <i className="fas fa-user-plus mr-2"></i> ADICIONAR ATLETA
                 </Button>
               </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {users.map(u => (
                   <div key={u.id} className="bg-white p-6 rounded-[2rem] border-2 border-slate-100 hover:border-padelgreen transition-all group relative flex items-center gap-4 shadow-sm hover:shadow-xl translate-y-0 hover:-translate-y-1">
@@ -858,7 +892,6 @@ export default function App() {
                         <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-500">{u.role}</span>
                       </div>
                     </div>
-                    
                     <div className="absolute top-4 right-4 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                       <button 
                         onClick={() => { setEditingUser(u); setIsUserModalOpen(true); }} 
